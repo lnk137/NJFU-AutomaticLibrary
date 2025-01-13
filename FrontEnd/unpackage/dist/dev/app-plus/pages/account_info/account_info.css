@@ -1,0 +1,64 @@
+
+.content[data-v-8b2d79fb] {
+		background: #A2C8DA;
+		background-size: cover;
+		background-position: center center;
+		height: 100vh;
+		margin: 0;
+		display: flex;
+		justify-content: center;
+		align-items: center;
+}
+.form-container[data-v-8b2d79fb] {
+		width: 70%;
+		max-width: 400px;
+		padding: 20px;
+		background: rgba(255, 255, 255, 0.2);
+		backdrop-filter: blur(10px);
+		-webkit-backdrop-filter: blur(10px);
+		border-radius: 15px;
+		box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+}
+.form-item[data-v-8b2d79fb] {
+		margin-bottom: 15px;
+		display: flex;
+		flex-direction: column;
+}
+uni-label[data-v-8b2d79fb] {
+		font-size: 16px;
+		margin-bottom: 5px;
+		color: #265ac2;
+}
+uni-input[data-v-8b2d79fb] {
+		padding: 10px;
+		border: 1px solid rgba(255, 255, 255, 0.3);
+		border-radius: 5px;
+		font-size: 14px;
+		background: rgba(255, 255, 255, 0.2);
+		color: #0e2249;
+		backdrop-filter: blur(5px);
+		-webkit-backdrop-filter: blur(5px);
+}
+uni-input[data-v-8b2d79fb]::-webkit-input-placeholder {
+		color: rgba(255, 255, 255, 0.6);
+}
+uni-input[data-v-8b2d79fb]::placeholder {
+		color: rgba(255, 255, 255, 0.6);
+}
+uni-button[data-v-8b2d79fb] {
+		background: rgba(255, 255, 255, 0.2);
+		color: #fff;
+		border: 1px solid rgba(255, 255, 255, 0.3);
+		border-radius: 5px;
+		font-size: 16px;
+		cursor: pointer;
+		backdrop-filter: blur(5px);
+		-webkit-backdrop-filter: blur(5px);
+		transition: all 0.3s ease;
+}
+uni-button[data-v-8b2d79fb]:hover {
+		background: rgba(255, 255, 255, 0.4);
+}
+uni-button[data-v-8b2d79fb]:active {
+		background: rgba(255, 255, 255, 0.3);
+}

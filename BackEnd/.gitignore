@@ -1,0 +1,4 @@
+# 排除 config.py
+config/
+db/
+log/

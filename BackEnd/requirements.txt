@@ -1,0 +1,5 @@
+flask
+pycryptodome
+requests
+beautifulsoup4
+flask-cors

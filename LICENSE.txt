@@ -1,0 +1,13 @@
+GNU AFFERO GENERAL PUBLIC LICENSE
+Version 3, 19 November 2007
+
+Copyright (C) [2025] [lnk137]
+
+Everyone is permitted to copy and distribute verbatim copies of this license document, but changing it is not allowed.
+
+The GNU Affero General Public License is a free, copyleft license for software and other kinds of works.
+
+...
+
+完整的许可证内容可以在 GNU 官方网站上查看：
+https://www.gnu.org/licenses/agpl-3.0.txt

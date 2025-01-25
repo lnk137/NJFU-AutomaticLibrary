@@ -1,23 +1,19 @@
-# 项目介绍
+# NJFU-AutomaticLibrary
+基于 Flask 的自动化南京林业大学图书馆预约系统
+## 项目介绍
 
-    本项目使用Uniapp作为前端，Flask作为后端，实际运行时将Flask部署在云服务器或本地(不推荐)，使用仿加密的手段，无需安装任何浏览器驱动
+    本项目使用Uniapp作为前端，Flask作为后端，实际运行时将Flask部署在云服务器或本地(不推荐)，使用仿前端加密的手段，无需安装任何浏览器驱动，配置好后可以每天定时抢次日的图书馆座位
     
     能够保存用户账号信息和想要预约的时间和座位，每天固定时间自动预约次日座位（注意周五20:00闭馆）
 
-# 环境依赖
+## 环境依赖
 
     Python相关依赖已列在requirements.txt中
     
-    需注意自行补充config包中内容，config.py中包括各种路径变量，config.js中包括url变量
-    config.py结构具体如下
-    vpn_username='你的网上办事大厅账号'
-    vpn_password='你的网上办事大厅密码'
-    log_file='./log/app.log'
-    db_name="db/library.db"
-    folder_path="座位信息"
-    server_ip="你的本地/服务器ip及端口"
+    需注意自行补充.env，config.js中内容
+    .env结构请参考.env.example文件
 
-# 项目结构
+## 项目结构
 
 #### BackEnd
 
@@ -46,9 +42,25 @@
     ├─stores              // 状态管理目录，存放 Pinia 状态管理文件
     ├─utils               // 工具函数目录
 
-# 界面展示
+## 界面展示
 
 
 
 ![未标题-1](README.assets/%E6%9C%AA%E6%A0%87%E9%A2%98-1-1737818666336-1.png)
+## 运行方法
 
+    1.终端输入git clone https://github.com/yourname/NJFU-AutomaticLibrary.git将项目克隆到本地
+    
+    2.在项目中输入命令python main.py启动本地服务器
+    
+    3.为scheduled_task.py配置定时启动任务
+    
+    4.(如果已经配置好前端)绑定学号后提交账号信息到数据库，之后保持本地服务器正常运行即可
+      (如果不想配置前端)手动填写sqlite数据库的reservation_info表，之后保持本地服务器正常运行即可
+
+## 联系方式                                               
+	qq:1197936911 添加好友务必填写原因
+## 许可证 
+本项目根据 [GNU Affero 通用公共许可证 v3.0](https://www.gnu.org/licenses/agpl-3.0.html) 的条款进行许可
+
+您可以自由使用、修改和分发本软件，但必须遵守 AGPL 的相关条款

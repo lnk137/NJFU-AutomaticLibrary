@@ -1,0 +1,7 @@
+# pip install -r requirements.txt
+flask
+pycryptodome
+requests
+beautifulsoup4
+flask-cors
+python-dotenv

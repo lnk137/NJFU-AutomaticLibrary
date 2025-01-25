@@ -18,7 +18,6 @@
 #### BackEnd
 
 	├─blueprints          // Flask 蓝图，用于实现 API 功能
-	├─config              // 配置文件，包含各种路径变量
 	├─db                  // 存放 SQLite 数据库文件
 	├─log                 // 日志目录
 	├─test                // 测试目录
@@ -26,6 +25,7 @@
 	├─座位信息              // 存储与座位相关的数据信息
 	├─main.py             // 项目主入口，负责启动 Flask 应用和加载核心模块
 	├─scheduled_task.py   // 定时任务脚本，用于处理预约
+	├─.env.example   	  // 环境变量模版文件
 
 #### FrontEnd
 

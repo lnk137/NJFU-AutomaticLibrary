@@ -4,39 +4,23 @@ from utils.library_database import *
 import json
 import logging
 from utils import config
-def setup_logging(log_file=config.LOG_FILE, log_level=logging.INFO):
-    """
-    设置日志配置，输出到文件和控制台，支持 UTF-8 编码。
 
-    :param log_file: 日志文件的路径，默认 'app.log'
-    :param log_level: 日志级别，默认 INFO
-    """
-    # 设置日志格式
-    log_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+log_path = os.path.dirname(config.LOG_FILE)
+if not os.path.exists(log_path):
+    os.makedirs(log_path)
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,  # 设置日志级别
+    format="[%(asctime)s] [%(levelname)s] [%(name)s] - %(message)s",
+    handlers=[
+        logging.FileHandler(config.LOG_FILE, encoding="utf-8"),  # 将日志输出到文件，设置编码为 utf-8
+        logging.StreamHandler()  # 同时输出到控制台
+    ]
+)
 
-    # 创建一个日志记录器
-    logger = logging.getLogger()
-
-    # 设置日志级别
-    logger.setLevel(log_level)
-
-    # 创建一个文件处理器，将日志保存到 app.log 文件，并设置编码格式为 utf-8
-    file_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
-    file_handler.setFormatter(log_formatter)
-
-    # 创建一个控制台处理器，将日志输出到控制台
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(log_formatter)
-
-    # 将文件处理器和控制台处理器添加到记录器
-    logger.addHandler(file_handler)
-    logger.addHandler(console_handler)
-
-    # 返回 logger，方便之后使用
-    return logger
 
 # 调用日志配置函数
-logger = setup_logging()
+logger = logging.getLogger(__name__)
 # 创建一个快捷方式用于记录日志
 log = logger.info
 

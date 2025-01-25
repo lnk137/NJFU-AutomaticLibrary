@@ -1,0 +1,65 @@
+{
+	"pages": [{
+			"path": "pages/index/index",
+			"style": {
+				"navigationBarTitleText": "",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/test/test",
+			"style": {
+				"navigationBarTitleText": "",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/account_info/account_info",
+			"style": {
+				"navigationBarTitleText": "",
+				"navigationStyle": "custom",
+				"enablePagePreload": true
+			}
+		},
+		{
+			"path": "pages/my/my",
+			"style": {
+				"navigationBarTitleText": "",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/announcement/announcement",
+			"style": {
+				"navigationBarTitleText": "",
+				"navigationStyle": "custom"
+			}
+		}
+	],
+	"globalStyle": {
+		"navigationBarTextStyle": "black",
+		"navigationBarTitleText": "",
+		"navigationBarBackgroundColor": "#F8F8F8",
+		"backgroundColor": "#F8F8F8"
+	},
+	"tabBar": {
+		"color": "#333440",
+		"fontSize": "17px",
+		"selectedColor": "#23acde",
+		"backgroundColor": "#639CDD",
+		"borderStyle": "black",
+		"position": "bottom",
+		"list": [{
+				"pagePath": "pages/index/index",
+				"iconPath": "static/tabbar/home.png",
+				"selectedIconPath": "static/tabbar/home_s.png"
+			},
+			{
+				"pagePath": "pages/my/my",
+				"iconPath": "static/tabbar/person.png",
+				"selectedIconPath": "static/tabbar/person_s.png"
+			}
+		]
+	},
+	"uniIdRouter": {}
+}

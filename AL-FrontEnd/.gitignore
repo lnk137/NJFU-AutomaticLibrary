@@ -1,0 +1,7 @@
+/config
+/.hbuilderx
+/.vscode
+/node_modules
+/dist
+/.idea
+/unpackage

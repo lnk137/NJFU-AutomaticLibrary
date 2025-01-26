@@ -1,9 +1,12 @@
 #linux:  #!/www/wwwroot/RemoteLibrary/.venv/bin/python
-from utils.library_system import *
-from utils.library_database import *
+from utils.library_system import LibrarySystem
+from utils.library_database import LibraryDatabase
+from utils.vpn_system import VPNSystem
+from utils import config
+import requests
+import os
 import json
 import logging
-from utils import config
 
 log_path = os.path.dirname(config.LOG_FILE)
 if not os.path.exists(log_path):
@@ -96,10 +99,15 @@ def reservation(db, reservation_item):
 
     # 获取座位设备 ID
     seat_id_list = get_seat_ids(db, seat_list)
+    shared_session = requests.Session()
+    vpn=VPNSystem(config.VPN_USERNAME, config.VPN_PASSWORD)
+    vpn.session = shared_session
 
     # 创建 LibrarySystem 实例并进行 VPN 登录
     library = LibrarySystem(logonName, password)
-    if not library.vpn_login():
+    library.session = shared_session
+
+    if not vpn.vpn_login():
         log(f"VPN 登录失败，无法继续预约")
         return
 
@@ -107,6 +115,7 @@ def reservation(db, reservation_item):
         # 进行座位预约
         success_message, user_info, fail_message = library.reserve_seat(seat_list=seat_id_list, begin_time=begin_time,
                                                                         end_time=end_time)
+
     except Exception as e:
         handle_reservation_error(e, reservation_item)
         return

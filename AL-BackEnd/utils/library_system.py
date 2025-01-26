@@ -139,66 +139,128 @@ class LibrarySystem:
         }
         return self.submit_vpn_login(login_url, params, data)
 
+    def get_initial_cookie(self):
+        """
+        获取初始 Cookie 以建立会话。
+
+        :return: 成功返回 True，失败返回 False
+        """
+        try:
+            init_resp = self.session.get(f"{self.base_url}ic-web/default/index{self.vpn_suffix}")
+            log("图书馆首页响应状态码:", init_resp.status_code)
+            if init_resp.status_code != 200:
+                log("图书馆首页访问失败")
+                return False
+            return True
+        except Exception as e:
+            log("获取初始 Cookie 时发生异常:", str(e))
+            return False
+
+    def get_public_key(self):
+        """
+        获取登录所需的公钥和随机字符串。
+
+        :return: (public_key, nonce) 或 (None, None)
+        """
+        try:
+            key_resp = self.session.get(self.public_key_url)
+            log("获取公钥响应状态码:", key_resp.status_code)
+            log("获取公钥响应内容:", key_resp.text)
+            if key_resp.status_code != 200:
+                log("获取公钥失败")
+                return None, None
+
+            key_data = key_resp.json()
+            if key_data.get('code') != 0:
+                log("公钥数据异常")
+                return None, None
+
+            public_key = key_data['data']['publicKey']
+            nonce = key_data['data']['nonceStr']
+            return public_key, nonce
+        except Exception as e:
+            log("获取公钥时发生异常:", str(e))
+            return None, None
+
+    def perform_login(self, public_key, nonce):
+        """
+        加密密码并发送登录请求。
+
+        :param public_key: 公钥
+        :param nonce: 随机字符串
+        :return: 登录成功返回用户信息字典，失败返回 None
+        """
+        try:
+            # 加密密码
+            encrypted_password = PasswordEncryptor.encrypt_with_public_key(
+                PasswordEncryptor.set_public_key(public_key),
+                f"{self.password};{nonce}"
+            )
+
+            # 发送登录请求
+            login_data = {
+                "logonName": self.username,
+                "password": encrypted_password,
+                "captcha": "",
+                "privacy": True,
+            }
+            login_resp = self.session.post(self.login_url, json=login_data)
+            log("图书馆登录响应状态码:", login_resp.status_code)
+            log("图书馆登录响应内容:", login_resp.text)
+
+            if login_resp.status_code != 200:
+                log("图书馆登录请求失败")
+                return None
+
+            login_result = login_resp.json()
+            if login_result.get('code') != 0:
+                log("图书馆登录失败:", login_result.get('message'))
+                return None
+
+            return login_result['data']
+        except Exception as e:
+            log("登录请求时发生异常:", str(e))
+            return None
+
+    def set_user_cookie(self, user_info):
+        """
+        设置用户相关的 Cookie。
+
+        :param user_info: 用户信息字典
+        """
+        try:
+            self.session.cookies.set(
+                'ic-cookie',
+                f"userid={user_info['accNo']};username={user_info['logonName']};usernumber={user_info['cardNo']};token={user_info['token']}",
+                domain='njfu.edu.cn',
+                path='/'
+            )
+            log("用户 Cookie 设置成功")
+        except Exception as e:
+            log("设置用户 Cookie 时发生异常:", str(e))
+
     def library_login(self):
         """
         登录图书馆系统，获取用户信息和登录状态。
 
         :return: 成功返回用户信息字典，失败返回 None
         """
-        # 访问首页获取cookie
-        init_resp = self.session.get(f"{self.base_url}ic-web/default/index{self.vpn_suffix}")
-        log("图书馆首页响应状态码:", init_resp.status_code)
-
-        if init_resp.status_code != 200:
-            log("图书馆首页访问失败")
+        # Step 1: 获取初始 Cookie
+        if not self.get_initial_cookie():
             return None
 
-        # 获取公钥
-        key_resp = self.session.get(self.public_key_url)
-        log("获取公钥响应状态码:", key_resp.status_code)
-        log("获取公钥响应内容:", key_resp.text)
-
-        if key_resp.status_code != 200:
-            log("获取公钥失败")
+        # Step 2: 获取公钥
+        public_key, nonce = self.get_public_key()
+        if not public_key or not nonce:
             return None
 
-        key_data = key_resp.json()
-        if key_data.get('code') != 0:
-            log("公钥数据异常")
+        # Step 3: 加密密码并登录
+        user_info = self.perform_login(public_key, nonce)
+        if not user_info:
             return None
 
-        # 加密密码
-        public_key = PasswordEncryptor.set_public_key(key_data['data']['publicKey'])
-        encrypted_password = PasswordEncryptor.encrypt_with_public_key(public_key, f"{self.password};{key_data['data']['nonceStr']}")
-
-        # 登录请求
-        login_data = {
-            "logonName": self.username,
-            "password": encrypted_password,
-            "captcha": "",
-            "privacy": True,
-        }
-        login_resp = self.session.post(self.login_url, json=login_data)
-        log("图书馆登录响应状态码:", login_resp.status_code)
-        log("图书馆登录响应内容:", login_resp.text)
-
-        if login_resp.status_code != 200:
-            log("图书馆登录请求失败")
-            return None
-
-        login_result = login_resp.json()
-        if login_result.get('code') != 0:
-            log("图书馆登录失败:", login_result.get('message'))
-            return None
-
-        user_info = login_result['data']
-        # 设置cookie
-        self.session.cookies.set(
-            'ic-cookie',
-            f"userid={user_info['accNo']};username={user_info['logonName']};usernumber={user_info['cardNo']};token={user_info['token']}",
-            domain='njfu.edu.cn',
-            path='/'
-        )
+        # Step 4: 设置 Cookie
+        self.set_user_cookie(user_info)
         log("图书馆登录成功")
         return user_info
 

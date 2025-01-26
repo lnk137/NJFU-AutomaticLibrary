@@ -1,15 +1,10 @@
-import base64
-import random
-import string
+
 from datetime import datetime, timedelta
 import requests
-from Crypto.Cipher import AES
-from Crypto.Cipher import PKCS1_v1_5
-from Crypto.PublicKey import RSA
-from Crypto.Util.Padding import pad
+
 from bs4 import BeautifulSoup
 from utils import config
-
+from utils.password_encryptor import PasswordEncryptor
 def log(*args):
     """
     统一打印日志函数。
@@ -21,31 +16,6 @@ def log(*args):
     pass
 
 
-def set_public_key(public_key):
-    """
-    将公钥字符串格式化为 PEM 格式，并导入为 RSA 公钥。
-
-    :param public_key: 公钥字符串
-    :return: RSA 公钥对象
-    """
-    pem = "-----BEGIN PUBLIC KEY-----\n"
-    pem += "\n".join(public_key[i:i + 64] for i in range(0, len(public_key), 64))
-    pem += "\n-----END PUBLIC KEY-----"
-    return RSA.importKey(pem)
-
-
-def encrypt_with_public_key(public_key, text):
-    """
-    使用 RSA 公钥加密文本。
-
-    :param public_key: RSA 公钥对象
-    :param text: 需要加密的文本
-    :return: 加密后的文本（base64 编码字符串）
-    """
-    text_bytes = text.encode('utf-8')
-    cipher = PKCS1_v1_5.new(public_key)
-    encrypted = cipher.encrypt(text_bytes)
-    return base64.b64encode(encrypted).decode('utf-8')
 
 
 class LibrarySystem:
@@ -71,6 +41,66 @@ class LibrarySystem:
             "Accept-Language": "zh-CN,zh;q=0.9",
         })
 
+    def fetch_vpn_initial_page(self, login_url, params):
+        """
+        获取 VPN 初始页面。
+
+        :param login_url: VPN 登录 URL
+        :param params: 请求参数
+        :return: (响应文本, 响应状态码) 或 None
+        """
+        try:
+            response = self.session.get(login_url, params=params)
+            log("VPN初始页面响应状态码:", response.status_code)
+            if response.status_code != 200:
+                log("VPN初始页面获取失败")
+                return None
+            return response.text
+        except Exception as e:
+            log("获取 VPN 初始页面时发生异常:", str(e))
+            return None
+
+    @staticmethod
+    def extract_form_elements(html_text):
+        """
+        从页面中提取必要的表单元素。
+
+        :param html_text: HTML 文本
+        :return: (salt, lt) 或 None
+        """
+        try:
+            soup = BeautifulSoup(html_text, 'html.parser')
+            salt_input = soup.find('input', {'id': 'pwdDefaultEncryptSalt'})
+            lt_input = soup.find('input', {'name': 'lt'})
+            if not salt_input or not lt_input:
+                log("未找到必要的表单元素")
+                return None
+            return salt_input['value'], lt_input['value']
+        except Exception as e:
+            log("提取表单元素时发生异常:", str(e))
+            return None
+
+    def submit_vpn_login(self, login_url, params, data):
+        """
+        提交 VPN 登录请求。
+
+        :param login_url: VPN 登录 URL
+        :param params: 请求参数
+        :param data: 表单数据
+        :return: 是否登录成功
+        """
+        try:
+            response = self.session.post(login_url, params=params, data=data, allow_redirects=True)
+            log("VPN登录响应状态码:", response.status_code)
+            if "frontend/login/index.html" in response.url:
+                log("VPN登录成功")
+                return True
+            log("VPN登录失败")
+            return False
+        except Exception as e:
+            log("提交登录请求时发生异常:", str(e))
+            return False
+
     def vpn_login(self):
         """
         登录 VPN，获取有效的 VPN 会话。
@@ -81,47 +111,33 @@ class LibrarySystem:
         params = {'service': 'https://webvpn.njfu.edu.cn/rump_frontend/loginFromCas/'}
 
         # 获取初始页面
-        init_resp = self.session.get(login_url, params=params)
-        log("VPN初始页面响应状态码:", init_resp.status_code)
-
-        if init_resp.status_code != 200:
-            log("VPN初始页面获取失败")
+        html_text = self.fetch_vpn_initial_page(login_url, params)
+        if not html_text:
             return False
 
-        soup = BeautifulSoup(init_resp.text, 'html.parser')
-        salt_input = soup.find('input', {'id': 'pwdDefaultEncryptSalt'})
-        lt_input = soup.find('input', {'name': 'lt'})
-
-        if not salt_input or not lt_input:
-            log("未找到必要的表单元素")
+        # 提取表单元素
+        form_elements = self.extract_form_elements(html_text)
+        if not form_elements:
             return False
+
+        salt, lt = form_elements
 
         # 加密密码
-        random_prefix = ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(64))
-        random_iv = ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(16))
-        cipher = AES.new(salt_input['value'].encode('utf-8'), AES.MODE_CBC, random_iv.encode('utf-8'))
-        encrypted_password = base64.b64encode(
-            cipher.encrypt(pad((random_prefix + config.VPN_PASSWORD).encode('utf-8'), AES.block_size))).decode('utf-8')
+        encrypted_password = PasswordEncryptor.aes_encrypt_password(salt, config.VPN_PASSWORD)
+        if not encrypted_password:
+            return False
 
-        # 登录请求
+        # 提交登录请求
         data = {
             'username': config.VPN_USERNAME,
             'password': encrypted_password,
-            'lt': lt_input['value'],
+            'lt': lt,
             'dllt': 'userNamePasswordLogin',
             'execution': 'e1s1',
             '_eventId': 'submit',
             'rmShown': '1'
         }
-        response = self.session.post(login_url, params=params, data=data, allow_redirects=True)
-        log("VPN登录响应状态码:", response.status_code)
-
-        if "frontend/login/index.html" not in response.url:
-            log("VPN登录失败")
-            return False
-
-        log("VPN登录成功")
-        return True
+        return self.submit_vpn_login(login_url, params, data)
 
     def library_login(self):
         """
@@ -152,8 +168,8 @@ class LibrarySystem:
             return None
 
         # 加密密码
-        public_key = set_public_key(key_data['data']['publicKey'])
-        encrypted_password = encrypt_with_public_key(public_key, f"{self.password};{key_data['data']['nonceStr']}")
+        public_key = PasswordEncryptor.set_public_key(key_data['data']['publicKey'])
+        encrypted_password = PasswordEncryptor.encrypt_with_public_key(public_key, f"{self.password};{key_data['data']['nonceStr']}")
 
         # 登录请求
         login_data = {

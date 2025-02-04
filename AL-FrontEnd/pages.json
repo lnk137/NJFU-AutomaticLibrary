@@ -42,24 +42,24 @@
 		"navigationBarBackgroundColor": "#F8F8F8",
 		"backgroundColor": "#F8F8F8"
 	},
-	"tabBar": {
-		"color": "#333440",
-		"fontSize": "17px",
-		"selectedColor": "#23acde",
-		"backgroundColor": "#639CDD",
-		"borderStyle": "black",
-		"position": "bottom",
-		"list": [{
-				"pagePath": "pages/index/index",
-				"iconPath": "static/tabbar/home.png",
-				"selectedIconPath": "static/tabbar/home_s.png"
-			},
-			{
-				"pagePath": "pages/my/my",
-				"iconPath": "static/tabbar/person.png",
-				"selectedIconPath": "static/tabbar/person_s.png"
-			}
-		]
-	},
+	// "tabBar": {
+	// 	"color": "#333440",
+	// 	"fontSize": "17px",
+	// 	"selectedColor": "#23acde",
+	// 	"backgroundColor": "#C8E6C9",
+	// 	"borderStyle": "black",
+	// 	"position": "bottom",
+	// 	"list": [{
+	// 			"pagePath": "pages/index/index",
+	// 			"iconPath": "static/tabbar/home.png",
+	// 			"selectedIconPath": "static/tabbar/home_s.png"
+	// 		},
+	// 		{
+	// 			"pagePath": "pages/my/my",
+	// 			"iconPath": "static/tabbar/person.png",
+	// 			"selectedIconPath": "static/tabbar/person_s.png"
+	// 		}
+	// 	]
+	// },
 	"uniIdRouter": {}
 }

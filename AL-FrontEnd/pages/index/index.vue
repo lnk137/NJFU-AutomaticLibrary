@@ -1,17 +1,34 @@
 <template>
 	<view class="content">
 		<!-- 毛玻璃效果区域 -->
+		<view class="header">NJFU AutoLib</view>
 		<view class="result-container">
 			<p>{{ resultTime }}</p>
 			<p>{{ resultMessage }}</p>
 		</view>
 
 		<view class="button-list">
-			<view class="button" @click="goToPage('/pages/account_info/account_info')">配置账号信息</view>
+			<!-- 			<view class="button" @click="goToPage('/pages/account_info/account_info')">配置账号信息</view>
 			<view class="button" @click="goToPage('/pages/announcement/announcement')">查看公告</view>
 			<view class="switch-container">
 				<view class="button" v-if="isReserved" @click="switchIsReserved">已开启预约状态</view>
 				<view class="button" v-else @click="switchIsReserved" style="color: #c22626;">已关闭预约状态</view>
+			</view> -->
+			<view class="button" @click="goToPage('/pages/account_info/account_info')">
+				<image src="/static/index/set.png" class="icon" />
+				<view>配置</view>
+			</view>
+			<view class="button" @click="goToPage('/pages/announcement/announcement')">
+				<image src="/static/index/ac.png" class="icon" style="scale: 1.1;" />
+				<view>公告</view>
+			</view>
+			<view v-if="isReserved" @click="switchIsReserved" class="button">
+				<image src="/static/index/yes.png" class="icon" />
+				<view>切换</view>
+			</view>
+			<view v-else @click="switchIsReserved" class="button">
+				<image src="/static/index/err.png" class="icon" />
+				<view>切换</view>
 			</view>
 		</view>
 	</view>
@@ -34,21 +51,8 @@
 	const isStudentIdBound = ref(false);
 
 	const goToPage = (url) => {
-		const studentId = uni.getStorageSync("studentId");
-		isStudentIdBound.value = !!studentId; // 如果学号存在，则为 true
-
-		if (!isStudentIdBound.value) {
-			uni.showToast({
-				title: "请先绑定学号",
-				icon: "none",
-				duration: 2000,
-			});
-			return;
-		}
-
-		// 跳转到指定页面
 		uni.navigateTo({
-			url, // 跳转到指定页面的路径
+			url,
 		});
 	};
 
@@ -150,17 +154,16 @@
 </script>
 
 <style scoped lang="less">
+	.header {
+		margin-top: 100px;
+		font-size: 32px;
+		font-weight: bold;
+		color: #535d52
+	}
+
 	.content {
-		background: #A2C8DA;
 		/* 默认背景色，避免加载时空白 */
-		background: url(@/static/b-i.png) no-repeat;
-		background-size: cover;
-		/* 图片覆盖填充 */
-		background-position: center center;
-		/* 居中对齐 */
-		background-repeat: no-repeat;
-		/* 防止图片重复 */
-		background-attachment: fixed;
+		background-color: #E8F5E9;
 		/* 背景固定，滚动时不动 */
 		height: 100vh;
 		margin: 0;
@@ -171,49 +174,51 @@
 	}
 
 	.result-container {
-		margin-top: 150px;
+		margin-top: 60px;
 		width: 72%;
 		max-height: 300px;
 		padding: 10px 20px;
-		/* 增加水平内边距，让内容居中更好看 */
 		text-align: center;
-		background: rgba(255, 255, 255, 0.4);
-		backdrop-filter: blur(10px);
-		-webkit-backdrop-filter: blur(10px);
-		color: #333;
+		background: #C8E6C9;
+		color: #535d52;
 		font-size: 16px;
 		font-weight: bold;
-		box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.2);
 		border-radius: 20px;
+		border: 2px solid #8b9b88;
 	}
 
 
 	.button-list {
+		margin-top: 50px;
 		display: flex;
 		justify-content: center;
 		align-items: center;
-		flex-direction: column;
-		height: 100%;
+		flex-wrap: wrap;
 	}
 
 	.button {
-		background: rgba(255, 255, 255, 0.2);
-		/* 半透明背景 */
-		color: #265ac2;
+		margin: 20px;
+		background-color: #C8E6C9;
+		color: #535d52;
 		font-size: 16px;
 		font-weight: bold;
 		text-align: center;
-		margin-top: 20px;
-		padding: 12px 24px;
-		border: 1px solid rgba(255, 255, 255, 0.3);
-		/* 半透明边框 */
+		padding: 10px;
+		border: 2px solid #707d6e;
 		border-radius: 30px;
-		box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.2);
-		backdrop-filter: blur(10px);
-		/* 毛玻璃模糊效果 */
-		-webkit-backdrop-filter: blur(10px);
-		/* Safari 兼容 */
-		cursor: pointer;
-		transition: all 0.3s ease;
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		align-items: center;
+		border-radius: 50%;
+		width: 60px;
+		/* 设置宽度 */
+		height: 60px;
+		/* 设置高度 */
+	}
+
+	.icon {
+		width: 35px;
+		height: 35px;
 	}
 </style>

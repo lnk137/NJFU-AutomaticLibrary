@@ -1,5 +1,5 @@
 <template>
-	<view class="content" :style="{ backgroundImage: backgroundLoaded ? `url(${backgroundImage})` : 'none' }">
+	<view class="content">
 		<view class="form-container">
 			<view class="form-item">
 				<label for="logonName">图书馆账号：</label>
@@ -39,8 +39,6 @@
 		server_url
 	} from "@/config/config.js";
 
-	const backgroundLoaded = ref(false);
-	const backgroundImage = "/static/b-i.png"; // 背景图片路径
 
 	// 表单数据
 	const form = reactive({
@@ -50,18 +48,7 @@
 		seatNumbers: ["", "", ""],
 	});
 
-	// 在组件挂载后加载背景图片和表单信息
 	onMounted(() => {
-		// 加载背景图片
-		uni.getImageInfo({
-			src: backgroundImage,
-			success: () => {
-				backgroundLoaded.value = true; // 图片加载完成后设置为已加载
-			},
-			fail: (err) => {
-				console.error("背景图片加载失败", err);
-			},
-		});
 
 		// 从本地存储加载表单数据
 		const savedForm = uni.getStorageSync("form");
@@ -188,9 +175,7 @@
 
 <style scoped>
 	.content {
-		background: #A2C8DA;
-		background-size: cover;
-		background-position: center center;
+		background-color: #E8F5E9;
 		height: 100vh;
 		margin: 0;
 		display: flex;
@@ -202,11 +187,9 @@
 		width: 70%;
 		max-width: 400px;
 		padding: 20px;
-		background: rgba(255, 255, 255, 0.2);
-		backdrop-filter: blur(10px);
-		-webkit-backdrop-filter: blur(10px);
+		background-color: #A5D6A7;
 		border-radius: 15px;
-		box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+		border: 2px solid #8b9b88;
 	}
 
 	.form-item {
@@ -218,41 +201,22 @@
 	label {
 		font-size: 16px;
 		margin-bottom: 5px;
-		color: #265ac2;
+		color: #535d52;
 	}
 
 	input {
 		padding: 10px;
-		border: 1px solid rgba(255, 255, 255, 0.3);
+		border: 1px solid #8b9b88;
 		border-radius: 5px;
 		font-size: 14px;
-		background: rgba(255, 255, 255, 0.2);
-		color: #0e2249;
-		backdrop-filter: blur(5px);
-		-webkit-backdrop-filter: blur(5px);
-	}
-
-	input::placeholder {
-		color: rgba(255, 255, 255, 0.6);
+		background-color: #C8E6C9;
+		color: #535d52;
 	}
 
 	button {
-		background: rgba(255, 255, 255, 0.2);
-		color: #fff;
-		border: 1px solid rgba(255, 255, 255, 0.3);
+		background-color: #81C784;
+		color: #535d52;
 		border-radius: 5px;
 		font-size: 16px;
-		cursor: pointer;
-		backdrop-filter: blur(5px);
-		-webkit-backdrop-filter: blur(5px);
-		transition: all 0.3s ease;
-	}
-
-	button:hover {
-		background: rgba(255, 255, 255, 0.4);
-	}
-
-	button:active {
-		background: rgba(255, 255, 255, 0.3);
 	}
 </style>

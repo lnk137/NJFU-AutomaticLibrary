@@ -8,12 +8,6 @@
 		</view>
 
 		<view class="button-list">
-			<!-- 			<view class="button" @click="goToPage('/pages/account_info/account_info')">配置账号信息</view>
-			<view class="button" @click="goToPage('/pages/announcement/announcement')">查看公告</view>
-			<view class="switch-container">
-				<view class="button" v-if="isReserved" @click="switchIsReserved">已开启预约状态</view>
-				<view class="button" v-else @click="switchIsReserved" style="color: #c22626;">已关闭预约状态</view>
-			</view> -->
 			<view class="button" @click="goToPage('/pages/account_info/account_info')">
 				<image src="/static/index/set.png" class="icon" />
 				<view>配置</view>
@@ -31,6 +25,7 @@
 				<view>切换</view>
 			</view>
 		</view>
+		<image src="/static/index/wave.png" class="wave" />
 	</view>
 </template>
 
@@ -47,8 +42,8 @@
 		server_url
 	} from "@/config/config.js"; // 根据实际路径调整
 
-	// 判断学号是否绑定
-	const isStudentIdBound = ref(false);
+
+	const form = uni.getStorageSync("form");
 
 	const goToPage = (url) => {
 		uni.navigateTo({
@@ -62,18 +57,12 @@
 	// 切换预约状态并提交到后端
 	const switchIsReserved = async () => {
 		try {
-			// 获取本地存储的 studentId
-			const storedStudentId = uni.getStorageSync("studentId");
-			if (!storedStudentId) {
-				throw new Error("请先绑定学号");
-			}
-
 			// 准备切换的预约状态
 			const newReservedState = !isReserved.value;
-
+			console.log("form.logonName", form.logonName)
 			// 整合提交数据
 			const requestData = {
-				pid: storedStudentId, // 从本地存储获取的学号
+				pid: form.logonName, // 从本地存储获取的学号
 				is_reserved: newReservedState,
 			};
 
@@ -89,13 +78,14 @@
 
 			isReserved.value = newReservedState;
 			uni.setStorageSync("isReserved", isReserved.value);
-
-			// 显示提交成功提示
-			uni.showToast({
-				title: response.data.message,
-				icon: "success",
-				duration: 2000,
-			});
+			if (response.data.message == '已更新') {
+				// 显示提交成功提示
+				uni.showToast({
+					title: response.data.message,
+					icon: "success",
+					duration: 2000,
+				});
+			} else throw new Error('更新失败');
 		} catch (e) {
 			// 错误处理
 			uni.showToast({
@@ -126,17 +116,11 @@
 	// 从后端获取结果字符串
 	const fetchResultMessage = async () => {
 		try {
-			// 获取本地存储的 studentId
-			const storedStudentId = uni.getStorageSync("studentId");
-			if (!storedStudentId) {
-				throw new Error("请先绑定学号");
-			}
-
 			const response = await uni.request({
 				url: `${server_url}/db/get_reservations_by_pid`, // 替换为后端接口地址
 				method: "POST",
 				data: {
-					'pid': storedStudentId
+					'pid': form.logonName
 				}, // 提交的 JSON 数据
 				header: {
 					"Content-Type": "application/json", // 设置请求头
@@ -220,5 +204,13 @@
 	.icon {
 		width: 35px;
 		height: 35px;
+	}
+
+	.wave {
+		width: 100%;
+		height: 150px;
+		position: fixed;
+		bottom: 0;
+		left: 0;
 	}
 </style>

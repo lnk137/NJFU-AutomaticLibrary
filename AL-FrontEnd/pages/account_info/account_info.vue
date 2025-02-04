@@ -25,6 +25,7 @@
 				<button @click="submitForm">提交信息</button>
 			</view>
 		</view>
+		<image src="/static/index/wave.png" class="wave" />
 	</view>
 </template>
 
@@ -128,23 +129,17 @@
 
 	const sendReservationData = async () => {
 		try {
-			// 获取本地存储的 studentId
-			const storedStudentId = uni.getStorageSync("studentId");
-			if (!storedStudentId) {
-				throw new Error("请先绑定学号");
-			}
-			// 判断预约状态
 			const storedReserved = uni.getStorageSync("isReserved"); // 从本地存储读取
-
 			// 整合提交数据
 			const requestData = {
-				pid: storedStudentId, // 从本地存储获取的学号
+				pid: form.logonName,
 				logonName: form.logonName,
 				password: form.password,
 				timeSlot: form.timeSlot,
 				seat_list: form.seatNumbers.filter((seat) => seat.trim() !== ""), // 过滤掉空的座位号
 				is_reserved: storedReserved,
 			};
+
 
 			// 提交到后端
 			const response = await uni.request({
@@ -164,6 +159,7 @@
 			});
 
 		} catch (error) {
+			console.error("提交失败:", error);
 			uni.showToast({
 				title: '提交失败',
 				icon: 'none',
@@ -184,12 +180,14 @@
 	}
 
 	.form-container {
+		margin-bottom: 60px;
 		width: 70%;
 		max-width: 400px;
 		padding: 20px;
-		background-color: #A5D6A7;
+		background-color: #daebdb;
 		border-radius: 15px;
-		border: 2px solid #8b9b88;
+		box-shadow: 2px 2px 2px 1px rgb(0 0 0 / 10%);
+		/* border: 2px solid #8b9b88; */
 	}
 
 	.form-item {
@@ -206,7 +204,8 @@
 
 	input {
 		padding: 10px;
-		border: 1px solid #8b9b88;
+		/* border: 1px solid #8b9b88; */
+		box-shadow: 2px 2px 2px 1px rgb(0 0 0 / 10%);
 		border-radius: 5px;
 		font-size: 14px;
 		background-color: #C8E6C9;
@@ -214,9 +213,18 @@
 	}
 
 	button {
-		background-color: #81C784;
+		background-color: #aacead;
+		box-shadow: 2px 2px 2px 1px rgb(0 0 0 / 10%);
 		color: #535d52;
 		border-radius: 5px;
 		font-size: 16px;
+	}
+
+	.wave {
+		width: 100%;
+		height: 120px;
+		position: fixed;
+		bottom: 0;
+		left: 0;
 	}
 </style>

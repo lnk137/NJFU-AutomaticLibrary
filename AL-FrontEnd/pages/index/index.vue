@@ -52,7 +52,7 @@
 	};
 
 	// 预约状态
-	const isReserved = ref(true);
+	const isReserved = ref(false);
 
 	// 切换预约状态并提交到后端
 	const switchIsReserved = async () => {
@@ -99,6 +99,10 @@
 	// 页面加载时读取预约状态
 	onMounted(() => {
 		const storedReserved = uni.getStorageSync("isReserved"); // 从本地存储读取
+		if (!storedReserved) {
+			uni.setStorageSync("isReserved", false);
+		}
+		console.log("storedReserved", storedReserved);
 		if (storedReserved !== null && storedReserved !== undefined) {
 			isReserved.value = storedReserved; // 更新状态
 		}

@@ -140,8 +140,7 @@
 				is_reserved: storedReserved,
 			};
 
-
-			// 提交到后端
+			console.log("提交的数据", requestData); // 提交到后端
 			const response = await uni.request({
 				url: `${server_url}/db/insert_reservation`, // 后端接口地址
 				method: "POST",

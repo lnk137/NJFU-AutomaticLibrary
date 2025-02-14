@@ -59,7 +59,7 @@
       (如果不想配置前端)手动填写sqlite数据库的reservation_info表，之后保持本地服务器正常运行即可
 
 ## 联系方式                                               
-	qq:1197936911 添加好友务必填写原因
+	邮箱:lnk137@foxmail.com
 ## 许可证 
 本项目根据 [GNU Affero 通用公共许可证 v3.0](https://www.gnu.org/licenses/agpl-3.0.html) 的条款进行许可
 

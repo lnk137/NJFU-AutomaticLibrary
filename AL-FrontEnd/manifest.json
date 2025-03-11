@@ -2,8 +2,8 @@
     "name" : "AutoLib",
     "appid" : "__UNI__56BEBAF",
     "description" : "",
-    "versionName" : "2.0.1",
-    "versionCode" : 201,
+    "versionName" : "2.0.2",
+    "versionCode" : 202,
     "transformPx" : false,
     /* 5+App特有相关 */
     "app-plus" : {

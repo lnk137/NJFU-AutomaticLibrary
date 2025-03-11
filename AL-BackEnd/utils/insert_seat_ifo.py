@@ -60,12 +60,12 @@ def insert_devices_from_folder_to_db(folder_path, db_path):
         db.close()
 
 if __name__ == "__main__":
-    pass
-    # # 文件夹路径，包含多个 .txt 文件
-    # folder_path = "座位信息"  # 替换为实际文件夹路径
-    #
-    # # 数据库路径
-    # db_path = "/db/library.db"
-    #
-    # # 调用函数，将设备信息插入数据库
-    # insert_devices_from_folder_to_db(folder_path, db_path)
+
+    # 文件夹路径，包含多个 .txt 文件
+    folder_path = r"E:\AAAAAAAA\FrontBackEndProjects\NJFU-AutomaticLibrary\AL-BackEnd\座位信息"  # 替换为实际文件夹路径
+
+    # 数据库路径
+    db_path = r"E:\AAAAAAAA\FrontBackEndProjects\NJFU-AutomaticLibrary\AL-BackEnd\db\library.db"
+
+    # 调用函数，将设备信息插入数据库
+    insert_devices_from_folder_to_db(folder_path, db_path)

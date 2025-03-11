@@ -26,8 +26,8 @@ def save_dev_pairs_to_file(dev_pairs, output_file):
             file.write(f"devId: {dev_id}, devName: {dev_name}\n")
 
 # 示例使用
-file_path = "2A原始.txt"  # 替换为你的文件路径
-output_file = "2A座位.txt"  # 输出文件名
+file_path = "../4A夹"  # 替换为你的文件路径
+output_file = "../座位信息/四楼夹层座位.txt"  # 输出文件名
 
 result = extract_dev_pairs(file_path)
 save_dev_pairs_to_file(result, output_file)

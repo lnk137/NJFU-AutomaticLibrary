@@ -88,19 +88,19 @@
 			return;
 		}
 
-		// 验证座位号格式
-		const seatNumberRegex = /^[1-9][0-9]*F-[A-Z]\d{3}$/; // 示例正则：匹配类似 "2F-A012"
-		const invalidSeats = form.seatNumbers.filter(
-			(seat) => seat.trim() !== "" && !seatNumberRegex.test(seat.trim())
-		);
+		// // 验证座位号格式
+		// const seatNumberRegex = /^[1-9][0-9]*F-[A-Z]\d{3}$/; // 示例正则：匹配类似 "2F-A012"
+		// const invalidSeats = form.seatNumbers.filter(
+		// 	(seat) => seat.trim() !== "" && !seatNumberRegex.test(seat.trim())
+		// );
 
-		if (invalidSeats.length > 0) {
-			uni.showToast({
-				title: `无效座位号: ${invalidSeats.join(", ")}`,
-				icon: "none",
-			});
-			return;
-		}
+		// if (invalidSeats.length > 0) {
+		// 	uni.showToast({
+		// 		title: `无效座位号: ${invalidSeats.join(", ")}`,
+		// 		icon: "none",
+		// 	});
+		// 	return;
+		// }
 
 		// 确保至少填写一个座位号
 		if (!form.seatNumbers.some((seat) => seat.trim() !== "")) {

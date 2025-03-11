@@ -9,8 +9,12 @@ API_URL = f"http://{config.SERVER_IP}/db/insert_announcement"  # 根据实际服
 # 准备数据
 announcements = [
     {
-        "title": "更新通知，最新版本2.0.1",
-        "content": "https://wwoc.lanzoup.com/iGMUk2mrsype\n密码:",
+        "title": "v2.0.2更新",
+        "content":
+        '''
+        https://wwoc.lanzoup.com/i65qg2q9avxc
+        密码:6ebv
+        ''',
         "importance": "高",
         "publish_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     },

@@ -1,223 +1,229 @@
 from flask import Blueprint, jsonify, request
-from utils.library_database import *
+from pymongo import MongoClient, DESCENDING
 from datetime import datetime
+from utils import config
+
+# Blueprint and database setup
 database_bp = Blueprint("database_bp", __name__)
+mongo_client = MongoClient(f"mongodb://{config.DB_IP}/")
+db = mongo_client.AutoLib
+user_cfg = db.user_config_info
+ann = db.announcements
 
-# 插入预约信息
-@database_bp.route("/insert_reservation", methods=["POST"])
-def insert_reservation():
-    # 初始化数据库连接
-    db = LibraryDatabase()
+
+def get_json_or_400():
+    """统一的 JSON 获取和校验"""
+    data = request.get_json(silent=True)
+    if not data:
+        return None, ({"error": "无效的请求数据"}, 400)
+    return data, None
+
+
+def upsert_collection(collection, key_filter: dict, new_values: dict):
+    """统一的 upsert 操作，捕获异常并返回状态"""
+    try:
+        collection.update_one(key_filter, {"$set": new_values}, upsert=True)
+        return {"message": "操作成功！"}, 200
+    except Exception as e:
+        return {"error": str(e)}, 500
+
+
+def update_field(collection, pid, field_name, field_value):
+    """更新单个字段并记录更新时间"""
+    record = {field_name: field_value, "updated_at": datetime.utcnow()}
+    return upsert_collection(collection, {"pid": pid}, record)
+
+
+@database_bp.route("/reservation/all", methods=["POST"])
+def insert_full_reservation():
+    """
+    测试接口：插入或更新完整的预约配置，包括所有字段
+    接收 JSON:
+    {
+      "pid": "...",
+      "vpn_password": "...",
+      "lib_password": "...",
+      "seat_list": [...],
+      "mode": "...",
+      "time": {...},
+      "priority": ...,
+      "is_reserved": ...
+    }
+    """
+    data, err = get_json_or_400()
+    if err:
+        return jsonify(*err)
+    if 'pid' not in data:
+        return jsonify({"error": "缺少 pid"}), 400
+
+    # 直接使用整个 data 作为文档内容，并追加更新时间
+    rec = data.copy()
+    rec['updated_at'] = datetime.utcnow()
+
+    result, code = upsert_collection(user_cfg, {"pid": rec['pid']}, rec)
+    return jsonify(result), code
+
+@database_bp.route("/reservation", methods=["POST"])
+def insert_or_update_reservation():
+    """
+    插入或更新用户配置（预约信息）
+    包括：vpn_password、lib_password、seat_list
+    """
+    data, err = get_json_or_400()
+    if err:
+        return jsonify(*err)
+
+    required = ["pid", "vpn_password", "lib_password", "seat_list"]
+    missing = [f for f in required if f not in data]
+    if missing:
+        return jsonify({"error": f"缺少字段: {', '.join(missing)}"}), 400
+
+    rec = {
+        "pid": data["pid"],
+        "vpn_password": data["vpn_password"],
+        "lib_password": data["lib_password"],
+        "seat_list": data["seat_list"],
+    }
+    result, code = upsert_collection(user_cfg, {"pid": rec["pid"]}, rec)
+    return jsonify(result), code
+
+
+@database_bp.route("/reservation/time", methods=["POST"])
+def set_time_reservation():
+    """
+    设置预约时间段和模式
+    """
+    data, err = get_json_or_400()
+    if err:
+        return jsonify(*err)
+    if "pid" not in data or "mode" not in data or "timeSlot" not in data:
+        return jsonify({"error": "缺少 pid、mode 或 timeSlot"}), 400
 
     try:
-        # 获取前端数据
-        user_info = request.get_json()
-        if not user_info:
-            return jsonify({"error": "无效的请求数据"}), 400
+        begin, end = data["timeSlot"].split("-")
+    except ValueError:
+        return jsonify({"error": "timeSlot 格式应为 '开始-结束'"}), 400
 
-        # 检查必需字段
-        required_fields = ["pid", "logonName", "password", "timeSlot", "seat_list"]
-        for field in required_fields:
-            if field not in user_info:
-                return jsonify({"error": f"缺少必需字段: {field}"}), 400
+    rec = {
+        "mode": data["mode"],
+        "time": {"begin": begin, "end": end},
+    }
+    result, code = upsert_collection(user_cfg, {"pid": data["pid"]}, rec)
+    return jsonify(result), code
 
-        # 处理时间段与 seat_list
-        user_info.update({
-            "begin_time": user_info["timeSlot"].split("-")[0],
-            "end_time": user_info["timeSlot"].split("-")[1],
-            "seat_list": json.dumps(user_info["seat_list"]),  # 转换 seat_list 为 JSON 字符串
-            "is_reserved": int(user_info.get("is_reserved", True))  # 默认值为 True
-        })
 
-        # 删除不需要的字段
-        user_info.pop("timeSlot", None)
-
-        # 调试日志
-        print("接收到的预约数据:", user_info)
-
-        # 插入数据
-        db.insert_or_update_reservation(user_info)
-
-        return jsonify({"message": "提交成功！"})
-
-    except Exception as e:
-        print(f"插入预约信息失败: {e}")
-        return jsonify({"message": f"服务器错误"}), 500
-
-    finally:
-        # 确保数据库连接关闭
-        db.close()
-
-# 更新预约状态
-@database_bp.route("/update_reservation_status", methods=["POST"])
+@database_bp.route("/reservation/status", methods=["POST"])
 def update_reservation_status():
-    try:
-        # 初始化数据库连接
-        db = LibraryDatabase()
+    """
+    更新预约状态
+    """
+    data, err = get_json_or_400()
+    if err:
+        return jsonify(*err)
 
-        # 获取来自前端的数据（pid, is_reserved）
-        res = request.get_json()
-        pid = res['pid']
-        is_reserved = res['is_reserved']
-        # 更新用户预约信息
-        db.update_reservation_status(pid, is_reserved)
+    pid = data.get("pid")
+    status = data.get("is_reserved")
+    if pid is None or status is None:
+        return jsonify({"error": "缺少 pid 或 is_reserved"}), 400
 
-        # 关闭数据库连接
-        db.close()
-        return jsonify({
-            "message": "已更新",
-        })
-    except Exception as e:
-        print(f"更新预约状态失败: {e}")
-        return jsonify({"message": f"服务器错误"}), 500
-
-    finally:
-        # 确保数据库连接关闭
-        db.close()
+    result, code = update_field(user_cfg, pid, "is_reserved", status)
+    return jsonify(result), code
 
 
-# 更新优先级
-@database_bp.route("/update_priority", methods=["POST"])
+@database_bp.route("/reservation/priority", methods=["POST"])
 def update_priority():
+    """
+    更新优先级
+    """
+    data, err = get_json_or_400()
+    if err:
+        return jsonify(*err)
+
+    pid = data.get("pid")
+    prio = data.get("priority")
+    if pid is None or prio is None:
+        return jsonify({"error": "缺少 pid 或 priority"}), 400
+
+    result, code = update_field(user_cfg, pid, "priority", prio)
+    return jsonify(result), code
+
+
+@database_bp.route("/reservation/query", methods=["POST"])
+def get_reservation_by_pid():
+    """
+    根据 pid 查询预约记录
+    """
+    data, err = get_json_or_400()
+    if err:
+        return jsonify(*err)
+
+    pid = data.get("pid")
+    if not pid:
+        return jsonify({"error": "缺少 pid"}), 400
+
+    rec = user_cfg.find_one({"pid": pid}, {"_id": 0})
+    return jsonify({"message": rec or {}}), 200
+
+
+@database_bp.route("/query", methods=["POST"])
+def execute_query():
+    """
+    任意集合查询
+    POST body 包含：collection, filter, projection
+    """
+    data, err = get_json_or_400()
+    if err:
+        return jsonify(*err)
+
+    coll_name = data.get("collection")
+    if not coll_name:
+        return jsonify({"error": "缺少 collection 字段"}), 400
+
     try:
-        # 初始化数据库连接
-        db = LibraryDatabase()
-
-        # 获取来自前端的数据（pid, is_reserved）
-        res = request.get_json()
-        pid = res['pid']
-        priority = res['priority']
-        # 更新用户预约信息
-        db.update_priority_by_pid(pid, priority)
-
-        # 关闭数据库连接
-        db.close()
-        return jsonify({
-            "message": "已更新",
-        })
+        coll = db[coll_name]
+        cursor = coll.find(data.get("filter", {}), data.get("projection"))
+        results = [{k: v for k, v in doc.items() if k != "_id"} for doc in cursor]
+        return jsonify({"message": "查询成功", "results": results}), 200
     except Exception as e:
-        print(f"更新预约状态失败: {e}")
-        return jsonify({"message": f"服务器错误"}), 500
+        return jsonify({"error": str(e)}), 500
 
-    finally:
-        # 确保数据库连接关闭
-        db.close()
 
-# 查询预约结果
-@database_bp.route("/get_reservations_by_pid", methods=["POST"])
-def get_reservations_by_pid():
-    # 初始化数据库连接
-    db = LibraryDatabase()
-
-    # 获取来自前端的数据（pid）
-    pid = request.get_json().get("pid")
-
-    # 查询预约信息
-    reservation_result = db.get_reservation_result_by_pid(pid)
-
-    # 关闭数据库连接
-    db.close()
-    return jsonify({
-        "message": reservation_result,
-    })
-
-# 执行自定义 SQL 查询
-@database_bp.route("/execute_sql", methods=["POST"])
-def execute_sql():
-    try:
-        # 初始化数据库连接
-        db = LibraryDatabase()
-
-        # 获取前端数据
-        data = request.get_json()
-        sql = data.get("sql")  # 获取 SQL 语句
-        params = data.get("params", [])  # 获取查询参数，默认为空列表
-
-        if not sql:
-            return jsonify({"error": "缺少 SQL 语句"}), 400
-
-        # 调试日志
-        print("执行的 SQL:", sql)
-        print("参数:", params)
-
-        # 执行查询
-        db.cursor.execute(sql, params)
-        rows = db.cursor.fetchall()
-        columns = [desc[0] for desc in db.cursor.description]  # 获取列名
-
-        # 格式化查询结果
-        results = [dict(zip(columns, row)) for row in rows]
-
-        return jsonify({
-            "message": "查询成功",
-            "results": results
-        })
-    except Exception as e:
-        print(f"执行自定义 SQL 失败: {e}")
-        return jsonify({"error": f"服务器错误: {str(e)}"}), 500
-    finally:
-        # 确保数据库连接关闭
-        db.close()
-
-@database_bp.route("/insert_announcement", methods=["POST"])
+@database_bp.route("/announcement", methods=["POST"])
 def insert_or_update_announcement():
-    db = LibraryDatabase()
+    """
+    插入或更新公告
+    """
+    data, err = get_json_or_400()
+    if err:
+        return jsonify(*err)
 
-    try:
-        # 获取前端数据
-        data = request.get_json()
-        if not data:
-            return jsonify({"error": "无效的请求数据，未提供 JSON 数据"}), 400
+    required = ["title", "content", "importance"]
+    missing = [f for f in required if f not in data]
+    if missing:
+        return jsonify({"error": f"缺少字段: {', '.join(missing)}"}), 400
 
-        # 检查必需字段
-        required_fields = ["title", "content", "importance"]
-        missing_fields = [field for field in required_fields if field not in data]
-        if missing_fields:
-            return jsonify({"error": f"缺少必需字段: {', '.join(missing_fields)}"}), 400
-
-        # 自动生成时间戳
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        data["publish_time"] = data.get("publish_time", current_time)  # 如果没有传递 publish_time，则设置为当前时间
-        data["update_time"] = current_time  # 每次插入或更新都重新设置 update_time
-
-        # 插入或更新公告
-        db.insert_announcement(data)
-
-        return jsonify({"message": "公告插入或更新成功！"}), 200
-    except KeyError as e:
-        # 捕获 KeyError（如果 data 中缺少键）
-        print(f"插入或更新公告失败，缺少字段: {e}")
-        return jsonify({"error": f"服务器错误，缺少字段: {e}"}), 500
-    except Exception as e:
-        # 捕获其他异常
-        print(f"插入或更新公告失败: {e}")
-        return jsonify({"error": f"服务器错误: {str(e)}"}), 500
-    finally:
-        # 确保数据库连接关闭
-        db.close()
+    now = datetime.utcnow()
+    rec = {
+        "title": data["title"],
+        "content": data["content"],
+        "importance": data["importance"],
+        "publish_time": data.get("publish_time", now),
+        "update_time": now
+    }
+    result, code = upsert_collection(ann, {"title": rec["title"]}, rec)
+    return jsonify(result), code
 
 
-# 获取公告
-@database_bp.route("/get_announcements", methods=["GET"])
+@database_bp.route("/announcement", methods=["GET"])
 def get_announcements():
-    db = LibraryDatabase()
-
+    """
+    根据 importance（可选）获取公告列表，按 publish_time 降序
+    """
+    importance = request.args.get("importance")
+    filter_ = {"importance": importance} if importance else {}
     try:
-        # 获取查询参数
-        importance = request.args.get("importance")  # 可选参数（高, 中, 低）
-
-        # 查询公告
-        announcements = db.get_announcements(importance)
-
-        return jsonify({
-            "message": "查询成功",
-            "announcements": announcements
-        })
+        cursor = ann.find(filter_).sort("publish_time", DESCENDING)
+        result = [{k: v for k, v in doc.items() if k != "_id"} for doc in cursor]
+        return jsonify({"message": "查询成功", "announcements": result}), 200
     except Exception as e:
-        print(f"查询公告失败: {e}")
-        return jsonify({"error": "服务器错误"}), 500
-    finally:
-        db.close()
-
-
-
+        return jsonify({"error": str(e)}), 500

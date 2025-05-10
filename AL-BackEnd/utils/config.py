@@ -16,6 +16,7 @@ LOG_FILE = os.path.join(PROJECT_ROOT, os.getenv("LOG_FILE"))
 DB_NAME = os.path.join(PROJECT_ROOT, os.getenv("DB_NAME"))
 FOLDER_PATH = os.path.join(PROJECT_ROOT, os.getenv("FOLDER_PATH"))
 SERVER_IP = os.getenv("SERVER_IP")
+DB_IP= os.getenv("DB_IP")
 
 if __name__ == "__main__":
     print(f"Log File Path: {LOG_FILE}")

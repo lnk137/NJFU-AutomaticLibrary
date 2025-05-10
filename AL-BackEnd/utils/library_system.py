@@ -1,6 +1,14 @@
 from utils.base_system import BaseSystem
 from utils.password_encryptor import PasswordEncryptor
 from datetime import datetime, timedelta
+from pymongo import MongoClient, ASCENDING, DESCENDING
+from utils import config
+
+# MongoDB 初始化
+mongo_client = MongoClient(f"mongodb://{config.DB_IP}/")
+db = mongo_client.AutoLib
+user_config_info = db.user_config_info  # 存储预约记录
+users_col = db.users  # 存储用户信息
 
 def log(*args):
     """
@@ -82,7 +90,6 @@ class LibrarySystem(BaseSystem):
                 PasswordEncryptor.set_public_key(public_key),
                 f"{self.password};{nonce}"
             )
-
             # 发送登录请求
             login_data = {
                 "logonName": self.username,
@@ -159,7 +166,7 @@ class LibrarySystem(BaseSystem):
         if not user_info:
             log("获取用户信息失败")
             return None
-        return {
+        user_info={
             'uuid': user_info['uuid'],
             'accNo': user_info['accNo'],
             'pid': user_info['pid'],
@@ -170,6 +177,7 @@ class LibrarySystem(BaseSystem):
             'deptName': user_info['deptName'],
             'token': user_info['token']
         }
+        return user_info
 
     @staticmethod
     def get_reservation_time(begin_time="10:30", end_time="22:00"):
@@ -215,17 +223,32 @@ class LibrarySystem(BaseSystem):
             return f"座位 {seat_id} 请求失败: 状态码 {response.status_code}"
 
         result = response.json()
-        if result.get('code') != 0:
-            return result.get('message')
+        target_time=f"{resv_begin_time[:10]} "+resv_begin_time[11:]+"-"+resv_end_time[11:]
+        # 解析json
+        if result.get('code') == 0:
+            is_successd = "预约成功"
+            message=f"{result['message']}"
+            #成功特有字段
+            uuid = result["data"]["uuid"]
+            resvStatus=result["data"]["resvStatus"]
+            who=f"{result['data']['resvName']}"
+            where=f"{result['data']['resvDevInfoList'][0]['roomName']}"
+            dev_id=f"{result['data']['resvDevInfoList'][0]['devName']}"
+            res_message=f"{who} 期望预约时间{target_time}{is_successd} {message} {where} {dev_id}"
 
-        return {
-            "message": result["message"],
-            "resvName": result["data"]["resvName"],
-            "roomName": result["data"]["resvDevInfoList"][0]["roomName"],
-            "devName": result["data"]["resvDevInfoList"][0]["devName"],
-        }
+            owned_seat= {dev_id: {}}
+            owned_seat[dev_id]["uuid"]=f"{uuid}"
+            owned_seat[dev_id]["target_time"] = f"{target_time}"
+            owned_seat[dev_id]["resvStatus"] = f"{resvStatus}"
+            self.insert_owned_seat(user_info['pid'], owned_seat)
+        else:
+            is_successd ="预约失败"
+            message=f"{result['message']}"
+            res_message=f"期望预约时间{target_time} {is_successd} {message}"
 
-    def reserve_seat(self, seat_list, begin_time="10:30", end_time="22:00"):
+        return res_message
+
+    def reserve_seat(self, seat_list, resv_begin_time, resv_end_time):
         """
         尝试为指定的座位列表进行预约。
 
@@ -240,30 +263,44 @@ class LibrarySystem(BaseSystem):
             if not user_info:
                 return "无已预约结果", "无用户信息", ["获取用户信息失败"]
 
-            # 设置预约时间
-            resv_begin_time, resv_end_time = self.get_reservation_time(begin_time, end_time)
-
-            fail_message = []
             # 遍历座位列表，尝试预约
             for seat_id in seat_list:
                 log(f"\n尝试预约座位: {seat_id}")
-                result = self.reserve_single_seat(user_info, seat_id, resv_begin_time, resv_end_time)
+                print(f"\n尝试预约座位: {seat_id}")
+                res_message = self.reserve_single_seat(user_info, seat_id, resv_begin_time, resv_end_time)
+                if "预约成功" in res_message:
+                    log(f"座位 {seat_id} 预约成功，停止尝试")
+                    break
 
-                # 如果是成功的预约结果，返回成功信息
-                if isinstance(result, dict):
-                    log(f"座位 {seat_id} 预约成功!")
-                    result_data = f"{result['message']}，{result['resvName']}，{result['roomName']}，{result['devName']}"
-                    log("预约信息:", result_data)
-                    return result_data, user_info, fail_message
-
-                # 如果失败，记录失败信息
-                log(f"座位 {seat_id} 预约失败: {result}")
-                if result not in fail_message:
-                    fail_message.append(result)
-
-            # 如果所有座位都预约失败
-            return "无已预约结果", user_info, fail_message
+            return res_message,user_info
 
         except Exception as e:
             log(f"预约过程出现异常: {str(e)}")
             return "无已预约结果", "无用户信息", [f"出现异常: {str(e)}"]
+
+    def insert_owned_seat(self, pid, owned_seat):
+        """
+        将预约成功的座位信息插入到数据库。
+
+        :param pid: 用户学号
+        :param owned_seat: 预约成功的座位信息字典
+        :return: 成功返回 True，失败返回 False
+        """
+        try:
+            # 更新用户配置信息中的已预约座位
+            result = user_config_info.update_one(
+                {"pid": pid},
+                {"$set": {"owned_seat": owned_seat, "updated_at": datetime.now()}},
+                upsert=False
+            )
+            
+            if result.modified_count > 0:
+                log(f"成功更新用户 {pid} 的预约座位信息")
+                return True
+            else:
+                log(f"未找到用户 {pid} 的配置信息，无法更新预约座位")
+                return False
+                
+        except Exception as e:
+            log(f"插入预约座位信息时发生异常: {str(e)}")
+            return False

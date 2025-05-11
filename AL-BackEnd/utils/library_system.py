@@ -236,11 +236,11 @@ class LibrarySystem(BaseSystem):
             dev_id=f"{result['data']['resvDevInfoList'][0]['devName']}"
             res_message=f"{who} 期望预约时间{target_time} {is_successd} {message} {where} {dev_id}"
 
-            owned_seat= {dev_id: {}}
-            owned_seat[dev_id]["uuid"]=f"{uuid}"
-            owned_seat[dev_id]["target_time"] = f"{target_time}"
-            owned_seat[dev_id]["resvStatus"] = f"{resvStatus}"
-            self.insert_owned_seat(user_info['pid'], owned_seat)
+            # owned_seat= {dev_id: {}}
+            # owned_seat[dev_id]["uuid"]=f"{uuid}"
+            # owned_seat[dev_id]["target_time"] = f"{target_time}"
+            # owned_seat[dev_id]["resvStatus"] = f"{resvStatus}"
+            # self.insert_or_update_mongo('user_config_info', user_info['pid'], {"owned_seat": owned_seat})
         else:
             is_successd ="预约失败"
             message=f"{result['message']}"
@@ -279,99 +279,71 @@ class LibrarySystem(BaseSystem):
             return "无已预约结果", "无用户信息", [f"出现异常: {str(e)}"]
     def delete_seat(self, uuid):
         """
-        删除已预约的座位。
+        删除预约座位。
 
         :param uuid: 预约记录的 UUID
         :return: (bool, str) - (是否成功, 消息)
         """
         try:
-            # 先登录图书馆系统
-            user_info = self.library_login()
-            if not user_info:
-                return False, "图书馆登录失败，无法删除座位"
+            delete_url = f"{self.base_url}ic-web/reserve/cancel/{uuid}{self.vpn_suffix}"
+            response = self.session.post(delete_url)
+            log(f"删除座位 {uuid} 响应状态码: {response.status_code}")
+            log(f"删除座位 {uuid} 响应内容: {response.text}")
 
-            delete_url = f"{self.base_url}ic-web/reserve/delete{self.vpn_suffix}"
-            
-            # 构建请求数据
-            payload = {
-                "uuid": uuid
-            }
+            if response.status_code != 200:
+                return False, f"删除座位请求失败: 状态码 {response.status_code}"
 
-            # 发起删除请求
-            response = self.session.post(delete_url, json=payload)
             result = response.json()
-            print(result.get("message"))
-            user_record = user_config_info.find_one({"owned_seat": {"$exists": True}})
-            if user_record and "owned_seat" in user_record:
-                # 遍历所有座位，找到匹配的 UUID 并删除
-                for dev_id, seat_info in user_record["owned_seat"].items():
-                    if seat_info.get("uuid") == uuid:
-                        # 使用 $unset 操作符删除匹配的座位信息
-                        user_config_info.update_one(
-                            {"pid": user_record["pid"]},
-                            {"$unset": {f"owned_seat.{dev_id}": ""}}
-                        )
-                        log(f"成功从数据库删除座位记录: {dev_id}")
-                        break
-            return result.get("message")
+            if result.get('code') == 0:
+                return True, "删除座位成功"
+            else:
+                return False, f"删除座位失败: {result.get('message')}"
 
         except Exception as e:
             error_msg = f"删除座位时发生异常: {str(e)}"
             log(error_msg)
             return False, error_msg
 
-    def insert_owned_seat(self, pid, owned_seat):
+    def insert_or_update_mongo(self, collection_name, pid, data, upsert=True):
         """
-        将预约成功的座位信息插入到数据库。
-
-        :param pid: 用户学号
-        :param owned_seat: 预约成功的座位信息字典
-        :return: 成功返回 True，失败返回 False
+        通用的 MongoDB 插入/更新方法。
+        collection_name: 集合名（'user_config_info' 或 'users'）
+        pid: 主键（如学号）
+        data: 要插入或更新的数据（字典）
+        upsert: 是否插入（默认True）
+        返回：操作是否成功（True/False）
         """
-        try:
-            # 更新用户配置信息中的已预约座位
-            result = user_config_info.update_one(
-                {"pid": pid},
-                {"$set": {"owned_seat": owned_seat, "updated_at": datetime.now()}},
-                upsert=False
-            )
-            
-            if result.modified_count > 0:
-                log(f"成功更新用户 {pid} 的预约座位信息")
-                return True
-            else:
-                log(f"未找到用户 {pid} 的配置信息，无法更新预约座位")
-                return False
-                
-        except Exception as e:
-            log(f"插入预约座位信息时发生异常: {str(e)}")
+        if collection_name == 'user_config_info':
+            collection = user_config_info
+        elif collection_name == 'users':
+            collection = users_col
+        else:
             return False
+        data['updated_at'] = datetime.now()
+        result = collection.update_one(
+            {"pid": pid},
+            {"$set": data},
+            upsert=upsert
+        )
+        return result.modified_count > 0 or result.upserted_id
 
     def get_reservation_info(self, begin_date=None, end_date=None, page=1, page_num=10):
         """
-        查询预约信息。
-
-        :param begin_date: 开始日期，格式：YYYY-MM-DD
-        :param end_date: 结束日期，格式：YYYY-MM-DD
-        :param page: 页码
-        :param page_num: 每页数量
-        :return: 预约信息列表
+        查询预约信息并写入Mongo
         """
         try:
             # 先登录图书馆系统
             user_info = self.library_login()
             if not user_info:
+                # 查询不到用户的情况直接owned_seat也置空
+                self.insert_or_update_mongo('user_config_info', '', {"owned_seat": {}}, upsert=True)
                 return None, "图书馆登录失败，无法查询预约信息"
 
-            # 如果没有指定查询开始日期，就取"今天"
             if not begin_date:
                 begin_date = datetime.now().strftime("%Y-%m-%d")
-
-            # 如果没有指定查询结束日期，就取"今天"往后推 3 天
             if not end_date:
                 end_date = (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%d")
 
-            # 构建查询 URL
             query_url = f"{self.base_url}ic-web/reserve/resvInfo{self.vpn_suffix}"
             params = {
                 "beginDate": begin_date,
@@ -382,54 +354,71 @@ class LibrarySystem(BaseSystem):
                 "orderKey": "gmt_create",
                 "orderModel": "desc"
             }
-
-            # 发起查询请求
             response = self.session.get(query_url, params=params)
             result = response.json()
-            
+
             if response.status_code != 200:
+                # 查询失败直接owned_seat置空
+                self.insert_or_update_mongo('user_config_info', user_info['pid'], {"owned_seat": {}}, upsert=True)
                 return None, f"查询请求失败: 状态码 {response.status_code}"
 
             if result.get('code') != 0:
+                self.insert_or_update_mongo('user_config_info', user_info['pid'], {"owned_seat": {}}, upsert=True)
                 return None, f"查询失败: {result.get('message', '未知错误')}"
 
-            # 检查是否有数据
             data_list = result.get('data', [])
+            formatted_data = []
+            owned_seat = dict()
             if not data_list:
+                # 若无记录则owned_seat置空
+                self.insert_or_update_mongo('user_config_info', user_info['pid'], {"owned_seat": {}}, upsert=True)
                 return [], "无预约记录"
 
-            # 整理返回数据
-            formatted_data = []
             for item in data_list:
-                # 转换时间戳为可读格式
                 begin_time = datetime.fromtimestamp(int(item.get('resvBeginTime', 0)) / 1000)
                 end_time = datetime.fromtimestamp(int(item.get('resvEndTime', 0)) / 1000)
-                
+                target_time = f"{begin_time.strftime('%Y-%m-%d %H:%M:%S')}-{end_time.strftime('%H:%M:%S')}"
+
+                dev_info_list = item.get('resvDevInfoList', [])
+                dev_info = dev_info_list[0] if dev_info_list else {}
+                dev_name = dev_info.get('devName', '') if dev_info_list else ''
+
+                seat_dict = {
+                    "uuid": item.get('uuid', ''),
+                    "target_time": target_time,
+                    "resvStatus": str(item.get('resvStatus', ''))
+                }
+
+                if dev_name:
+                    if dev_name not in owned_seat:
+                        owned_seat[dev_name] = []
+                    owned_seat[dev_name].append(seat_dict)
+
                 formatted_item = {
                     "uuid": item.get('uuid', ''),
                     "resvBeginTime": begin_time.strftime("%Y-%m-%d %H:%M:%S"),
                     "resvEndTime": end_time.strftime("%Y-%m-%d %H:%M:%S"),
                     "resvStatus": item.get('resvStatus', ''),
                     "resvName": item.get('resvName', ''),
-                    "devInfo": {}
+                    "devInfo": dev_info,
                 }
-                
-                # 处理设备信息
-                dev_info_list = item.get('resvDevInfoList', [])
-                if dev_info_list:
-                    dev_info = dev_info_list[0]
-                    formatted_item["devInfo"] = {
-                        "roomName": dev_info.get('roomName', ''),
-                        "devName": dev_info.get('devName', ''),
-                        "devId": dev_info.get('devId', '')
-                    }
-                
                 formatted_data.append(formatted_item)
-                print(f'{formatted_data=}')
+            print(f'{formatted_data=}')
+
+            # 插入/更新到Mongo
+            self.insert_or_update_mongo(
+                collection_name='user_config_info',
+                pid=user_info['pid'],
+                data={"owned_seat": owned_seat},
+                upsert=True
+            )
 
             return formatted_data, "查询成功"
 
         except Exception as e:
+            # 异常时同样置空
+            user_pid = user_info['pid'] if ('user_info' in locals() and user_info and 'pid' in user_info) else ''
+            self.insert_or_update_mongo('user_config_info', user_pid, {"owned_seat": {}}, upsert=True)
             error_msg = f"查询预约信息时发生异常: {str(e)}"
             log(error_msg)
             return None, error_msg

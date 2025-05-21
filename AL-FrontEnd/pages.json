@@ -34,6 +34,13 @@
 				"navigationBarTitleText": "",
 				"navigationStyle": "custom"
 			}
+		},
+		{
+			"path": "pages/reservation_info/reservation_info",
+			"style": {
+				"navigationBarTitleText": "预约记录",
+				"navigationStyle": "custom"
+			}
 		}
 	],
 	"globalStyle": {

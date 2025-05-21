@@ -7,6 +7,7 @@ from utils.insert_seat_ifo import *
 app = Flask(__name__)
 
 # 配置全局跨域
+
 CORS(app)
 
 # 注册蓝图

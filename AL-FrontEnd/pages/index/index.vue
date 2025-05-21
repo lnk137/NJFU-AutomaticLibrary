@@ -2,10 +2,10 @@
 	<view class="content">
 		<!-- 毛玻璃效果区域 -->
 		<view class="header">NJFU AutoLib</view>
-		<view class="result-container">
+		<!-- <view class="result-container">
 			<p>{{ resultTime }}</p>
 			<p>{{ resultMessage }}</p>
-		</view>
+		</view> -->
 
 		<view class="button-list">
 			<view class="button" @click="goToPage('/pages/account_info/account_info')">
@@ -16,14 +16,18 @@
 				<image src="/static/index/ac.png" class="icon" style="scale: 1.1;" />
 				<view>公告</view>
 			</view>
-			<view v-if="isReserved" @click="switchIsReserved" class="button">
+			<view class="button" @click="goToPage('/pages/reservation_info/reservation_info')">
+				<image src="/static/index/ac.png" class="icon" />
+				<view>预约记录</view>
+			</view>
+			<!-- 			<view v-if="isReserved" @click="switchIsReserved" class="button">
 				<image src="/static/index/yes.png" class="icon" />
 				<view>切换</view>
 			</view>
 			<view v-else @click="switchIsReserved" class="button">
 				<image src="/static/index/err.png" class="icon" />
 				<view>切换</view>
-			</view>
+			</view> -->
 		</view>
 		<image src="/static/index/wave.png" class="wave" />
 	</view>

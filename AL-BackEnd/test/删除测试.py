@@ -27,6 +27,7 @@ def reservation(res_item):
     shared_session = requests.Session()
     vpn = VPNSystem(pid, vpn_password)
     library = LibrarySystem(pid, lib_password)
+
     vpn.session = library.session = shared_session
 
 
@@ -34,6 +35,7 @@ def reservation(res_item):
         print(f"VPN 登录失败，无法继续预约")
         return
     uuid="9d5daf4f4e2d446b95af0ce38f99c3f7"
+    library.library_login()
     library.delete_seat(uuid)
 
 if __name__ == "__main__":

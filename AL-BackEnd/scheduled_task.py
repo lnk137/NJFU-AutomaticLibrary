@@ -212,11 +212,6 @@ def reservation(res_item: Dict[str, Any]) -> None:
     4. 执行预约
     5. 更新用户信息
     6. 记录预约结果
-    
-    所有步骤都有详细的日志记录，任何步骤失败都会更新用户配置。
-    
-    Args:
-        res_item: 预约配置项，包含用户信息和预约设置
     """
     # 加载账号信息
     pid = res_item["pid"]
@@ -325,7 +320,24 @@ def late_protect_action(user: Dict[str, Any], dev_name: str, seat_dict: Dict[str
     """
     try:
         # 取消原预约
-        Pipeline.delete_reservation(user, uuid_to_delete=seat_dict["uuid"])
+        try:
+            # 初始化图书馆系统（包含VPN登录）
+            library = LibrarySystem(
+                username=user["pid"],
+                password=user["lib_password"],
+                vpn_password=user["vpn_password"]
+            )
+            
+            # 删除原预约
+            success, message = library.delete_seat(seat_dict["uuid"])
+            if not success:
+                logger.error(f"迟到保护 >> 取消原预约失败: {message}")
+                return
+            logger.info(f"迟到保护 >> 成功取消原预约: {seat_dict['uuid']}")
+            
+        except Exception as e:
+            logger.error(f"迟到保护 >> 取消原预约异常: {str(e)}")
+            return
         
         # 计算新的预约时间
         target_time = seat_dict['target_time']
@@ -343,23 +355,24 @@ def late_protect_action(user: Dict[str, Any], dev_name: str, seat_dict: Dict[str
         new_begin_str = f"{date_str} {new_begin.strftime('%H:%M:%S')}"
         new_end_str = f"{date_str} {new_end.strftime('%H:%M:%S')}"
         
-        try:
-            # 初始化图书馆系统（包含VPN登录）
-            library = LibrarySystem(
-                username=user["pid"],
-                password=user["lib_password"],
-                vpn_password=user["vpn_password"]
-            )
+        # 获取座位ID
+        device = db.devices.find_one({"devName": dev_name}, {"_id": 0, "devId": 1})
+        if not device:
+            logger.error(f"迟到保护 >> 未找到座位ID: {dev_name}")
+            return
             
-            # 重新预约
+        seat_id = device["devId"]
+        logger.info(f"迟到保护 >> 座位 {dev_name} 的ID为: {seat_id}")
+        
+        # 重新预约
+        try:
             res_msg, _ = library.reserve_seat(
-                seat_list=[dev_name],
+                seat_list=[seat_id],
                 resv_begin_time=new_begin_str,
                 resv_end_time=new_end_str
             )
             logger.info(f"迟到保护 >> 重新预约 用户:{user['pid']} 座位:{dev_name} "
                        f"新时间:{new_begin_str}-{new_end_str} 结果:{res_msg}")
-                       
         except Exception as e:
             logger.error(f"迟到保护 >> 重新预约失败: {str(e)}")
             
@@ -400,7 +413,7 @@ def schedule_late_protection_jobs() -> None:
                         
                     begin_str = seat_dict['target_time'][:19]
                     begin_time = datetime.strptime(begin_str, "%Y-%m-%d %H:%M:%S")
-                    exec_time = begin_time - timedelta(minutes=5)
+                    exec_time = begin_time - timedelta(minutes=10)
                     
                     if exec_time > now:
                         job_id = f"{pid}_{dev_name}_{seat_dict['uuid']}"
@@ -413,10 +426,10 @@ def schedule_late_protection_jobs() -> None:
                             replace_existing=True
                         )
                         logger.info(f"迟到保护 >> 注册任务 用户:{pid} 座位:{dev_name} "
-                                  f"时刻:{exec_time.strftime('%H:%M:%S')}")
+                                  f"执行时间:{exec_time.strftime('%H:%M:%S')}")
                     else:
                         logger.info(f"迟到保护 >> 跳过过期任务 用户:{pid} 座位:{dev_name} "
-                                  f"时刻:{exec_time.strftime('%H:%M:%S')}")
+                                  f"原执行时间:{exec_time.strftime('%H:%M:%S')}")
         
         # 启动调度器
         scheduler.start()

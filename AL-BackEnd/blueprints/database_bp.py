@@ -2,6 +2,7 @@ from flask import Blueprint, jsonify, request
 from pymongo import MongoClient, DESCENDING
 from datetime import datetime
 from utils import config
+from utils.library_system import LibrarySystem
 
 # Blueprint and database setup
 database_bp = Blueprint("database_bp", __name__)
@@ -227,3 +228,135 @@ def get_announcements():
         return jsonify({"message": "查询成功", "announcements": result}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@database_bp.route("/reservation/query_info", methods=["POST"])
+def query_reservation_info():
+    """
+    查询用户的预约信息
+    
+    请求体:
+    {
+        "pid": "学号",
+        "vpn_password": "VPN密码",
+        "lib_password": "图书馆密码",
+        "begin_date": "开始日期(可选)",
+        "end_date": "结束日期(可选)",
+        "page": 页码(可选),
+        "page_num": 每页记录数(可选)
+    }
+    
+    返回:
+    {
+        "message": "查询结果消息",
+        "reservations": [
+            {
+                "uuid": "预约ID",
+                "resvBeginTime": "开始时间",
+                "resvEndTime": "结束时间",
+                "resvStatus": "预约状态",
+                "resvName": "预约人姓名",
+                "devInfo": {
+                    "devName": "座位名称",
+                    "roomName": "房间名称",
+                    ...
+                }
+            },
+            ...
+        ]
+    }
+    """
+    data, err = get_json_or_400()
+    if err:
+        return jsonify(*err)
+        
+    # 验证必要字段
+    required = ["pid", "vpn_password", "lib_password"]
+    missing = [f for f in required if f not in data]
+    if missing:
+        return jsonify({"error": f"缺少必要字段: {', '.join(missing)}"}), 400
+        
+    try:
+        # 初始化图书馆系统
+        library = LibrarySystem(
+            username=data["pid"],
+            password=data["lib_password"],
+            vpn_password=data["vpn_password"]
+        )
+        
+        # 获取查询参数
+        begin_date = data.get("begin_date")
+        end_date = data.get("end_date")
+        page = int(data.get("page", 1))
+        page_num = int(data.get("page_num", 10))
+        
+        # 查询预约信息
+        reservations, message = library.get_reservation_info(
+            begin_date=begin_date,
+            end_date=end_date,
+            page=page,
+            page_num=page_num
+        )
+        
+        if reservations is None:
+            return jsonify({"error": message}), 500
+            
+        return jsonify({
+            "message": message,
+            "reservations": reservations
+        }), 200
+        
+    except Exception as e:
+        return jsonify({"error": f"查询预约信息失败: {str(e)}"}), 500
+
+
+@database_bp.route("/reservation/delete", methods=["POST"])
+def delete_reservation():
+    """
+    删除预约座位
+    
+    请求体:
+    {
+        "pid": "学号",
+        "vpn_password": "VPN密码",
+        "lib_password": "图书馆密码",
+        "uuid": "预约记录的UUID"
+    }
+    
+    返回:
+    {
+        "message": "操作结果消息",
+        "success": true/false
+    }
+    """
+    data, err = get_json_or_400()
+    if err:
+        return jsonify(*err)
+        
+    # 验证必要字段
+    required = ["pid", "vpn_password", "lib_password", "uuid"]
+    missing = [f for f in required if f not in data]
+    if missing:
+        return jsonify({"error": f"缺少必要字段: {', '.join(missing)}"}), 400
+        
+    try:
+        # 初始化图书馆系统
+        library = LibrarySystem(
+            username=data["pid"],
+            password=data["lib_password"],
+            vpn_password=data["vpn_password"]
+        )
+        
+        # 删除预约
+        success, message = library.delete_seat(data["uuid"])
+        
+        return jsonify({
+            "message": message,
+            "success": success
+        }), 200 if success else 500
+        
+    except Exception as e:
+        return jsonify({
+            "error": f"删除预约失败: {str(e)}",
+            "success": False
+        }), 500

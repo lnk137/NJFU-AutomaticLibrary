@@ -17,8 +17,8 @@
 				<view>公告</view>
 			</view>
 			<view class="button" @click="goToPage('/pages/reservation_info/reservation_info')">
-				<image src="/static/index/ac.png" class="icon" />
-				<view>预约记录</view>
+				<image src="/static/index/search.png" class="icon" />
+				<view>查询</view>
 			</view>
 			<!-- 			<view v-if="isReserved" @click="switchIsReserved" class="button">
 				<image src="/static/index/yes.png" class="icon" />
@@ -35,7 +35,6 @@
 
 <script setup>
 	import {
-		ref,
 		onMounted,
 	} from "vue";
 	import {
@@ -53,95 +52,6 @@
 		uni.navigateTo({
 			url,
 		});
-	};
-
-	// 预约状态
-	const isReserved = ref(false);
-
-	// 切换预约状态并提交到后端
-	const switchIsReserved = async () => {
-		try {
-			// 准备切换的预约状态
-			const newReservedState = !isReserved.value;
-			console.log("form.logonName", form.logonName)
-			// 整合提交数据
-			const requestData = {
-				pid: form.logonName, // 从本地存储获取的学号
-				is_reserved: newReservedState,
-			};
-
-			// 提交到后端
-			const response = await uni.request({
-				url: `${server_url}/db/update_reservation_status`, // 使用反引号拼接
-				method: "POST",
-				data: requestData, // 提交的 JSON 数据
-				header: {
-					"Content-Type": "application/json", // 设置请求头
-				},
-			});
-
-			isReserved.value = newReservedState;
-			uni.setStorageSync("isReserved", isReserved.value);
-			if (response.data.message == '已更新') {
-				// 显示提交成功提示
-				uni.showToast({
-					title: response.data.message,
-					icon: "success",
-					duration: 2000,
-				});
-			} else throw new Error('更新失败');
-		} catch (e) {
-			// 错误处理
-			uni.showToast({
-				title: "提交失败，请检查网络",
-				icon: "none",
-				duration: 2000,
-			});
-		}
-	};
-
-	// 页面加载时读取预约状态
-	onMounted(() => {
-		const storedReserved = uni.getStorageSync("isReserved"); // 从本地存储读取
-		if (!storedReserved) {
-			uni.setStorageSync("isReserved", false);
-		}
-		console.log("storedReserved", storedReserved);
-		if (storedReserved !== null && storedReserved !== undefined) {
-			isReserved.value = storedReserved; // 更新状态
-		}
-
-		// 从后端获取结果字符串
-		fetchResultMessage();
-	});
-	// 在页面显示时调用获取结果的函数
-	onShow(() => {
-		fetchResultMessage();
-	});
-	// 数据库返回的结果字符串
-	const resultMessage = ref('');
-	const resultTime = ref("");
-	// 从后端获取结果字符串
-	const fetchResultMessage = async () => {
-		try {
-			const response = await uni.request({
-				url: `${server_url}/db/get_reservations_by_pid`, // 替换为后端接口地址
-				method: "POST",
-				data: {
-					'pid': form.logonName
-				}, // 提交的 JSON 数据
-				header: {
-					"Content-Type": "application/json", // 设置请求头
-				},
-			});
-			console.log(response.data);
-			const result = response.data.message;
-			resultMessage.value = result.result_info;
-			resultTime.value = result.created_at;
-
-		} catch (e) {
-			resultMessage.value = "尚未进行过预约";
-		}
 	};
 </script>
 

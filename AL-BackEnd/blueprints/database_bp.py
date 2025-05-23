@@ -6,10 +6,33 @@ from utils.library_system import LibrarySystem
 
 # Blueprint and database setup
 database_bp = Blueprint("database_bp", __name__)
-mongo_client = MongoClient(f"mongodb://{config.DB_IP}/")
-db = mongo_client.AutoLib
-user_cfg = db.user_config_info
-ann = db.announcements
+
+# 构建 MongoDB 连接字符串，暂时去掉密码验证
+# WARNING: 这会禁用应用层面的数据库认证，带来安全风险，仅用于调试！
+# 在生产环境中应启用并正确配置数据库认证
+mongo_uri = f"mongodb://{config.DB_IP}/"
+
+try:
+    print(f"正在连接 MongoDB: {mongo_uri}")
+    mongo_client = MongoClient(mongo_uri)
+    # 测试连接，如果认证在服务器端开启，此处仍可能失败
+    print("正在测试连接...")
+    mongo_client.admin.command('ping')
+    print(f"正在选择数据库: {config.DB_NAME}")
+    db = mongo_client[config.DB_NAME] # 使用配置的数据库名
+    user_cfg = db.user_config_info
+    ann = db.announcements
+    print("✅ MongoDB 连接成功！(应用未启用密码验证)")
+except Exception as e:
+    import traceback
+    print("="*50)
+    print("❌ MongoDB 连接失败！")
+    print(f"错误类型: {type(e).__name__}")
+    print(f"错误信息: {str(e)}")
+    print("详细堆栈:")
+    print(traceback.format_exc())
+    print("="*50)
+    print("提示：MongoDB 服务器可能仍然需要认证，或者连接地址/端口有误。")
 
 
 def get_json_or_400():
@@ -360,3 +383,43 @@ def delete_reservation():
             "error": f"删除预约失败: {str(e)}",
             "success": False
         }), 500
+
+
+@database_bp.route("/reservation/result", methods=["POST"])
+def get_user_result():
+    """
+    查询用户的预约结果信息
+    
+    请求体:
+    {
+        "pid": "学号"
+    }
+    
+    返回:
+    {
+        "message": "查询结果消息",
+        "result": "预约结果信息"
+    }
+    """
+    data, err = get_json_or_400()
+    if err:
+        return jsonify(*err)
+        
+    # 验证必要字段
+    if "pid" not in data:
+        return jsonify({"error": "缺少必要字段: pid"}), 400
+        
+    try:
+        # 查询用户配置中的 result 字段
+        user_record = user_cfg.find_one(
+            {"pid": data["pid"]},
+            {"result": 1, "_id": 0}
+        )
+        
+        return jsonify({
+            "message": "查询成功",
+            "result": user_record.get("result", "") if user_record else ""
+        }), 200
+        
+    except Exception as e:
+        return jsonify({"error": f"查询预约结果失败: {str(e)}"}), 500

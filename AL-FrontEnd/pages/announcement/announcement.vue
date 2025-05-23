@@ -50,11 +50,14 @@
 	const fetchAnnouncement = async () => {
 		try {
 			const response = await uni.request({
-				url: `${server_url}/db/get_announcements`, // 替换为后端接口地址
+				url: `${server_url}/db/announcement`, // 修正接口路径
 				method: "GET",
+				header: {
+					"Content-Type": "application/json"
+				}
 			});
 
-			if (response.statusCode === 200 && response.data.announcements) {
+			if (response.statusCode === 200 && response.data && response.data.announcements) {
 				// 替换换行符并更新公告列表
 				const result = response.data.announcements.map(({
 					content,
@@ -67,12 +70,20 @@
 				announcement.value = result; // 更新公告数据
 				uni.setStorageSync("announcements", JSON.stringify(result)); // 保存到本地存储
 
-				console.log("公告数据已更新:", result);
+				console.log("✅ 公告数据已更新:", result);
 			} else {
-				console.error("公告请求失败:", response);
+				console.error("❌ 公告请求失败:", response);
+				uni.showToast({
+					title: response.data?.message || '获取公告失败', // 使用后端返回的消息或默认消息
+					icon: "none"
+				});
 			}
 		} catch (error) {
-			console.error("公告获取失败:", error);
+			console.error("❌ 公告获取失败:", error);
+			uni.showToast({
+				title: "获取公告失败，请检查网络或服务器", // 更明确的错误提示
+				icon: "none"
+			});
 		}
 	};
 

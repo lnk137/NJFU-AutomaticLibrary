@@ -138,7 +138,7 @@ def calculate_reservation_time(res_item: Dict[str, Any]) -> Tuple[str, str]:
     mode = res_item["mode"]
     now = datetime.now()
     
-    if mode == "week":
+    if mode == "week_time":
         # 根据星期几选择时间
         tomorrow = now + timedelta(days=1)
         weekday_iso = str(tomorrow.isoweekday())  # 1-7 表示周一到周日
@@ -389,7 +389,7 @@ def schedule_late_protection_jobs() -> None:
     3. 为每个需要保护的座位注册保护任务
     4. 启动调度器并等待执行
     
-    保护任务在预约时间前5分钟触发。
+    保护任务在预约时间前7分钟触发。
     调度器会一直运行到晚上22点。
     """
     scheduler = BackgroundScheduler()
@@ -413,7 +413,7 @@ def schedule_late_protection_jobs() -> None:
                         
                     begin_str = seat_dict['target_time'][:19]
                     begin_time = datetime.strptime(begin_str, "%Y-%m-%d %H:%M:%S")
-                    exec_time = begin_time - timedelta(minutes=10)
+                    exec_time = begin_time - timedelta(minutes=7)
                     
                     if exec_time > now:
                         job_id = f"{pid}_{dev_name}_{seat_dict['uuid']}"

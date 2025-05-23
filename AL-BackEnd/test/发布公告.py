@@ -3,9 +3,9 @@ import requests
 import json
 from datetime import datetime
 from utils import config
-# API_URL = f"http://{config.SERVER_IP}/db/announcement"
+API_URL = f"http://{config.SERVER_IP}/db/announcement"
 # 接口地址
-API_URL = f"http://127.0.0.1:5001/db/announcement"  # 直接使用完整的URL
+# API_URL = f"http://127.0.0.1:5001/db/announcement"  # 直接使用完整的URL
 
 # 准备数据
 announcements = [

@@ -3,6 +3,7 @@ from flask_cors import CORS
 from utils import config
 # from blueprints.reserve_bp import reserve_bp
 from blueprints.database_bp import database_bp
+from blueprints.app_bp import app_bp  # 导入新的蓝图
 from utils.insert_seat_ifo import *
 app = Flask(__name__)
 
@@ -13,6 +14,7 @@ CORS(app)
 # 注册蓝图
 # app.register_blueprint(reserve_bp, url_prefix="/reserve")
 app.register_blueprint(database_bp, url_prefix="/db")
+app.register_blueprint(app_bp, url_prefix="/app")  # 注册应用更新蓝图
 
 @app.route("/")
 def home():
@@ -20,4 +22,4 @@ def home():
 
 if __name__ == "__main__":
     # 指定端口为 5001
-    app.run(debug=True, host="0.0.0.0", port=5002)
+    app.run(debug=True, host="0.0.0.0", port=5003)

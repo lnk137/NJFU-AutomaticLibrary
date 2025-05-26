@@ -169,7 +169,11 @@
 
 			// 成功获取预约记录
 			if (response.data && response.data.reservations) {
-				reservations.value = response.data.reservations;
+				// 按照预约开始时间从小到大排序
+				const sortedReservations = response.data.reservations.sort((a, b) => {
+					return new Date(a.resvBeginTime) - new Date(b.resvBeginTime);
+				});
+				reservations.value = sortedReservations;
 			} else {
                 // 没有预约记录，这不是错误，只是列表为空
                 reservations.value = []; // 确保清空旧数据

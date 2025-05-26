@@ -391,49 +391,69 @@ def schedule_late_protection_jobs() -> None:
     
     保护任务在预约时间前7分钟触发。
     调度器会一直运行到晚上22点。
+    每30分钟重新扫描一次预约记录，确保新预约也能得到保护。
     """
     scheduler = BackgroundScheduler()
-    now = datetime.now()
-    today_str = now.strftime("%Y-%m-%d")
     
-    try:
-        # 获取需要保护的用户
-        users = list(user_config_info.find({"late_protection": "True"}))
-        logger.info(f"找到 {len(users)} 个开启迟到保护的用户")
+    def register_protection_jobs():
+        """注册所有需要保护的预约任务"""
+        now = datetime.now()
+        today_str = now.strftime("%Y-%m-%d")
         
-        # 注册保护任务
-        for user in users:
-            pid = user.get("pid")
-            owned_seat = user.get("owned_seat", {})
+        try:
+            # 获取需要保护的用户
+            users = list(user_config_info.find({"late_protection": "True"}))
+            logger.info(f"找到 {len(users)} 个开启迟到保护的用户")
             
-            for dev_name, seat_list in owned_seat.items():
-                for seat_dict in seat_list:
-                    if seat_dict['target_time'][:10] != today_str:
-                        continue
+            # 注册保护任务
+            for user in users:
+                pid = user.get("pid")
+                owned_seat = user.get("owned_seat", {})
+                
+                for dev_name, seat_list in owned_seat.items():
+                    for seat_dict in seat_list:
+                        if seat_dict['target_time'][:10] != today_str:
+                            continue
+                            
+                        begin_str = seat_dict['target_time'][:19]
+                        begin_time = datetime.strptime(begin_str, "%Y-%m-%d %H:%M:%S")
+                        exec_time = begin_time - timedelta(minutes=7)
                         
-                    begin_str = seat_dict['target_time'][:19]
-                    begin_time = datetime.strptime(begin_str, "%Y-%m-%d %H:%M:%S")
-                    exec_time = begin_time - timedelta(minutes=7)
-                    
-                    if exec_time > now:
-                        job_id = f"{pid}_{dev_name}_{seat_dict['uuid']}"
-                        scheduler.add_job(
-                            late_protect_action,
-                            'date',
-                            run_date=exec_time,
-                            args=[user, dev_name, seat_dict],
-                            id=job_id,
-                            replace_existing=True
-                        )
-                        logger.info(f"迟到保护 >> 注册任务 用户:{pid} 座位:{dev_name} "
-                                  f"执行时间:{exec_time.strftime('%H:%M:%S')}")
-                    else:
-                        logger.info(f"迟到保护 >> 跳过过期任务 用户:{pid} 座位:{dev_name} "
-                                  f"原执行时间:{exec_time.strftime('%H:%M:%S')}")
-        
+                        # 只注册未来的任务
+                        if exec_time > now:
+                            job_id = f"{pid}_{dev_name}_{seat_dict['uuid']}"
+                            scheduler.add_job(
+                                late_protect_action,
+                                'date',
+                                run_date=exec_time,
+                                args=[user, dev_name, seat_dict],
+                                id=job_id,
+                                replace_existing=True
+                            )
+                            logger.info(f"迟到保护 >> 注册任务 用户:{pid} 座位:{dev_name} "
+                                      f"执行时间:{exec_time.strftime('%H:%M:%S')}")
+                        else:
+                            logger.info(f"迟到保护 >> 跳过过期任务 用户:{pid} 座位:{dev_name} "
+                                      f"原执行时间:{exec_time.strftime('%H:%M:%S')}")
+        except Exception as e:
+            logger.error(f"注册保护任务时发生异常: {str(e)}")
+
+    try:
         # 启动调度器
         scheduler.start()
-        logger.info("迟到保护 >> 所有任务注册完毕，开始等待执行...")
+        logger.info("迟到保护 >> 调度器已启动")
+        
+        # 立即执行一次任务注册
+        register_protection_jobs()
+        
+        # 添加定期重新注册任务
+        scheduler.add_job(
+            register_protection_jobs,
+            'interval',
+            minutes=30,
+            id='refresh_protection_jobs',
+            replace_existing=True
+        )
         
         # 主循环
         while True:

@@ -25,11 +25,35 @@ from typing import Dict, List, Optional, Tuple, Any, Union
 import requests
 from pymongo import MongoClient, ASCENDING, DESCENDING
 import time
+import logging
 
 from utils.base_system import BaseSystem
 from utils.password_encryptor import PasswordEncryptor
 from utils import config
 from utils.vpn_system import VPNSystem
+
+# 获取日志记录器
+logger = logging.getLogger(__name__)
+
+def log_with_user(level: str, user: str, operation: str, message: str) -> None:
+    """
+    统一的日志记录函数
+    
+    Args:
+        level: 日志级别
+        user: 用户标识
+        operation: 操作类型
+        message: 日志消息
+    """
+    extra = {'user': user, 'operation': operation}
+    if level == 'info':
+        logger.info(message, extra=extra)
+    elif level == 'error':
+        logger.error(message, extra=extra)
+    elif level == 'warning':
+        logger.warning(message, extra=extra)
+    elif level == 'debug':
+        logger.debug(message, extra=extra)
 
 # MongoDB 初始化
 mongo_client = MongoClient(f"mongodb://{config.DB_IP}/")
@@ -53,7 +77,7 @@ class LibrarySystem(BaseSystem):
     """
     
     # 系统URL配置
-    BASE_URL = "https://webvpn.njfu.edu.cn/webvpn/LjIwMS4xNjkuMjE4LjE2OC4xNjc=/LjIwNS4xNTguMjAwLjE3MS4xNTMuMTUwLjIxNi45Ny4yMTEuMTU2LjE1OC4xNzMuMTQ4LjE1NS4xNTUuMjE3LjEwMC4xNTAuMTY1/"
+    BASE_URL = "https://webvpn.njfu.edu.cn/webvpn/LjIwMS4xNkuMjE4LjE2OC4xNjc=/LjIwNS4xNTguMjAwLjE3MS4xNTMuMTUwLjIxNi45Ny4yMTEuMTU2LjE1OC4xNzMuMTQ4LjE1NS4xNTUuMjE3LjEwMC4xNTAuMTY1/"
     VPN_SUFFIX = "?vpn-12-libseat.njfu.edu.cn"
     
     def __init__(
@@ -179,11 +203,11 @@ class LibrarySystem(BaseSystem):
         try:
             init_resp = self.session.get(f"{self.base_url}ic-web/default/index{self.vpn_suffix}")
             if init_resp.status_code != 200:
-                print(f"获取初始Cookie失败: 状态码 {init_resp.status_code}")
+                log_with_user('error', self.username, 'Cookie获取', f"获取初始Cookie失败: 状态码 {init_resp.status_code}")
                 return False
             return True
         except Exception as e:
-            print(f"获取初始Cookie时发生异常: {str(e)}")
+            log_with_user('error', self.username, 'Cookie获取', f"获取初始Cookie时发生异常: {str(e)}")
             return False
 
     def _get_public_key(self) -> Tuple[Optional[str], Optional[str]]:
@@ -196,17 +220,17 @@ class LibrarySystem(BaseSystem):
         try:
             key_resp = self.session.get(self.public_key_url)
             if key_resp.status_code != 200:
-                print(f"获取公钥失败: 状态码 {key_resp.status_code}")
+                log_with_user('error', self.username, '公钥获取', f"获取公钥失败: 状态码 {key_resp.status_code}")
                 return None, None
 
             key_data = key_resp.json()
             if key_data.get('code') != 0:
-                print(f"获取公钥失败: {key_data.get('message', '未知错误')}")
+                log_with_user('error', self.username, '公钥获取', f"获取公钥失败: {key_data.get('message', '未知错误')}")
                 return None, None
 
             return key_data['data']['publicKey'], key_data['data']['nonceStr']
         except Exception as e:
-            print(f"获取公钥时发生异常: {str(e)}")
+            log_with_user('error', self.username, '公钥获取', f"获取公钥时发生异常: {str(e)}")
             return None, None
 
     def _perform_login(self, public_key: str, nonce: str) -> Optional[Dict[str, Any]]:
@@ -237,17 +261,17 @@ class LibrarySystem(BaseSystem):
             login_resp = self.session.post(self.login_url, json=login_data)
 
             if login_resp.status_code != 200:
-                print(f"登录请求失败: 状态码 {login_resp.status_code}")
+                log_with_user('error', self.username, '登录', f"登录请求失败: 状态码 {login_resp.status_code}")
                 return None
 
             login_result = login_resp.json()
             if login_result.get('code') != 0:
-                print(f"登录失败: {login_result.get('message', '未知错误')}")
+                log_with_user('error', self.username, '登录', f"登录失败: {login_result.get('message', '未知错误')}")
                 return None
 
             return login_result['data']
         except Exception as e:
-            print(f"登录请求时发生异常: {str(e)}")
+            log_with_user('error', self.username, '登录', f"登录请求时发生异常: {str(e)}")
             return None
 
     def _set_user_cookie(self, user_info: Dict[str, Any]) -> None:
@@ -400,7 +424,7 @@ class LibrarySystem(BaseSystem):
 
             # 尝试预约每个座位
             for seat_id in seat_list:
-                print(f"\n尝试预约座位: {seat_id}")
+                log_with_user('info', self.username, '预约', f"尝试预约座位: {seat_id}")
                 res_message = self._reserve_single_seat(
                     self.user_info,
                     seat_id,
@@ -408,7 +432,7 @@ class LibrarySystem(BaseSystem):
                     resv_end_time
                 )
                 if "预约成功" in res_message:
-                    print(f"座位 {seat_id} 预约成功，停止尝试")
+                    log_with_user('info', self.username, '预约', f"座位 {seat_id} 预约成功")
                     break
                     
             # 获取最新预约信息
@@ -417,7 +441,7 @@ class LibrarySystem(BaseSystem):
 
         except Exception as e:
             error_msg = f"预约过程出现异常: {str(e)}"
-            print(error_msg)
+            log_with_user('error', self.username, '预约', error_msg)
             return "无已预约结果", None
 
     def delete_seat(self, uuid: str) -> Tuple[bool, str]:

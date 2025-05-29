@@ -62,17 +62,68 @@ def setup_logging() -> logging.Logger:
     if not os.path.exists(log_path):
         os.makedirs(log_path)
     
-    logging.basicConfig(
-        level=logging.INFO,
-        format="[%(asctime)s] [%(levelname)s] [%(name)s] - %(message)s",
-        handlers=[
-            logging.FileHandler(config.LOG_FILE, encoding="utf-8"),
-            logging.StreamHandler()
-        ]
+    # 自定义日志格式
+    log_format = (
+        "[%(asctime)s] [%(levelname)s] "
+        "[%(name)s] [用户:%(user)s] "
+        "[%(operation)s] - %(message)s"
     )
-    return logging.getLogger(__name__)
+    
+    # 创建自定义过滤器
+    class UserFilter(logging.Filter):
+        def filter(self, record):
+            if not hasattr(record, 'user'):
+                record.user = '系统'
+            if not hasattr(record, 'operation'):
+                record.operation = '未知操作'
+            return True
+    
+    # 创建处理器
+    file_handler = logging.FileHandler(config.LOG_FILE, encoding="utf-8")
+    console_handler = logging.StreamHandler()
+    
+    # 设置处理器格式
+    formatter = logging.Formatter(log_format)
+    file_handler.setFormatter(formatter)
+    console_handler.setFormatter(formatter)
+    
+    # 添加过滤器
+    user_filter = UserFilter()
+    file_handler.addFilter(user_filter)
+    console_handler.addFilter(user_filter)
+    
+    # 配置根日志记录器
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(console_handler)
+    
+    # 获取当前模块的日志记录器
+    logger = logging.getLogger(__name__)
+    return logger
 
 logger = setup_logging()
+
+def log_with_user(logger, level: str, user: str, operation: str, message: str) -> None:
+    """
+    统一的日志记录函数
+    
+    Args:
+        logger: 日志记录器
+        level: 日志级别
+        user: 用户标识
+        operation: 操作类型
+        message: 日志消息
+    """
+    extra = {'user': user, 'operation': operation}
+    if level == 'info':
+        logger.info(message, extra=extra)
+    elif level == 'error':
+        logger.error(message, extra=extra)
+    elif level == 'warning':
+        logger.warning(message, extra=extra)
+    elif level == 'debug':
+        logger.debug(message, extra=extra)
 
 # MongoDB 初始化
 # 连接到MongoDB服务器，获取数据库和集合的引用
@@ -112,7 +163,7 @@ def get_seat_ids(seat_list: List[str]) -> List[str]:
         if device:
             seat_ids.append(device["devId"])
         else:
-            logger.warning(f"设备号 {device_name} 不存在")
+            log_with_user(logger, 'warning', '系统', '座位ID获取', f"设备号 {device_name} 不存在")
     return seat_ids
 
 def calculate_reservation_time(res_item: Dict[str, Any]) -> Tuple[str, str]:
@@ -186,7 +237,7 @@ def update_user_config(pid: str, result: str) -> None:
             upsert=True
         )
     except Exception as e:
-        logger.error(f"更新用户配置失败: {str(e)}")
+        log_with_user(logger, 'error', pid, '用户配置更新', f"更新用户配置失败: {str(e)}")
 
 def handle_reservation_error(pid: str, error_msg: str) -> None:
     """
@@ -198,7 +249,7 @@ def handle_reservation_error(pid: str, error_msg: str) -> None:
         pid: 用户ID
         error_msg: 错误信息
     """
-    logger.error(error_msg)
+    log_with_user(logger, 'error', pid, '预约异常', error_msg)
     update_user_config(pid, error_msg)
 
 def reservation(res_item: Dict[str, Any]) -> None:
@@ -216,22 +267,25 @@ def reservation(res_item: Dict[str, Any]) -> None:
     # 加载账号信息
     pid = res_item["pid"]
     vpn_password = res_item["vpn_password"]
-    lib_password = res_item["lib_password"].replace('！', '!')  # 处理全角感叹号
+    lib_password = res_item["lib_password"].replace('！', '!')
     seat_list = res_item["seat_list"]
     
     try:
         # 计算预约时间
         resv_begin_time, resv_end_time = calculate_reservation_time(res_item)
-        logger.info(f"用户 {pid} 预约时间: {resv_begin_time} - {resv_end_time}")
+        log_with_user(logger, 'info', pid, '预约时间', 
+                     f"预约时间: {resv_begin_time} - {resv_end_time}")
         
         # 获取座位ID
         seat_ids = get_seat_ids(seat_list)
         if not seat_ids:
+            log_with_user(logger, 'error', pid, '座位获取', "未找到有效的座位ID")
             handle_reservation_error(pid, "未找到有效的座位ID")
             return
             
         try:
-            # 初始化图书馆系统（包含VPN登录）
+            # 初始化图书馆系统
+            log_with_user(logger, 'info', pid, '系统初始化', "开始初始化图书馆系统")
             library = LibrarySystem(
                 username=pid,
                 password=lib_password,
@@ -239,6 +293,7 @@ def reservation(res_item: Dict[str, Any]) -> None:
             )
             
             # 执行预约
+            log_with_user(logger, 'info', pid, '预约执行', "开始执行座位预约")
             res_message, user_info = library.reserve_seat(
                 seat_list=seat_ids,
                 resv_begin_time=resv_begin_time,
@@ -246,7 +301,7 @@ def reservation(res_item: Dict[str, Any]) -> None:
             )
             
             # 记录预约结果
-            logger.info(f"用户 {pid} 预约结果: {res_message}")
+            log_with_user(logger, 'info', pid, '预约结果', f"预约结果: {res_message}")
             
             # 更新用户信息
             if user_info:
@@ -256,7 +311,7 @@ def reservation(res_item: Dict[str, Any]) -> None:
                     data=user_info,
                     upsert=True
                 )
-                logger.info(f"用户 {pid} 信息已更新")
+                log_with_user(logger, 'info', pid, '用户信息', "用户信息已更新")
             
             # 更新预约结果
             update_user_config(pid, res_message)
@@ -264,20 +319,21 @@ def reservation(res_item: Dict[str, Any]) -> None:
             # 获取最新的预约信息
             reservations, message = library.get_reservation_info()
             if reservations:
-                logger.info(f"用户 {pid} 当前预约状态: {message}")
+                log_with_user(logger, 'info', pid, '预约状态', f"当前预约状态: {message}")
                 for res in reservations:
-                    logger.info(f"预约详情: 座位 {res.get('devInfo', {}).get('devName', '未知')} "
-                              f"时间 {res.get('resvBeginTime')} - {res.get('resvEndTime')} "
-                              f"状态 {res.get('resvStatus')}")
+                    log_with_user(logger, 'info', pid, '预约详情', 
+                                f"座位 {res.get('devInfo', {}).get('devName', '未知')} "
+                                f"时间 {res.get('resvBeginTime')} - {res.get('resvEndTime')} "
+                                f"状态 {res.get('resvStatus')}")
                               
         except Exception as e:
             error_msg = f"登录或预约过程发生异常: {str(e)}"
-            logger.error(f"用户 {pid} {error_msg}")
+            log_with_user(logger, 'error', pid, '预约异常', error_msg)
             handle_reservation_error(pid, error_msg)
             
     except Exception as e:
         error_msg = f"预约过程发生异常: {str(e)}"
-        logger.error(f"用户 {pid} {error_msg}")
+        log_with_user(logger, 'error', pid, '预约异常', error_msg)
         handle_reservation_error(pid, error_msg)
 
 def process_reservations() -> None:
@@ -293,14 +349,14 @@ def process_reservations() -> None:
     """
     active_list = get_all_active_reservations()
     if not active_list:
-        logger.info("没有正在预约中的记录")
+        log_with_user(logger, 'info', '系统', '预约处理', "没有正在预约中的记录")
         return
         
-    logger.info(f"开始处理预约列表，共 {len(active_list)} 条")
+    log_with_user(logger, 'info', '系统', '预约处理', f"开始处理预约列表，共 {len(active_list)} 条")
     for item in active_list:
-        logger.info(f"预约学号: {item['pid']}, 优先级: {item['priority']}")
+        log_with_user(logger, 'info', item['pid'], '预约处理', f"预约学号: {item['pid']}, 优先级: {item['priority']}")
         reservation(item)
-    logger.info("预约处理结束")
+    log_with_user(logger, 'info', '系统', '预约处理', "预约处理结束")
 
 def late_protect_action(user: Dict[str, Any], dev_name: str, seat_dict: Dict[str, Any]) -> None:
     """
@@ -310,18 +366,12 @@ def late_protect_action(user: Dict[str, Any], dev_name: str, seat_dict: Dict[str
     1. 取消原预约
     2. 计算新的预约时间（延后1小时）
     3. 重新预约座位
-    
-    如果原预约时长小于2小时，结束时间也会延后1小时。
-    
-    Args:
-        user: 用户信息，包含登录凭证
-        dev_name: 设备名称
-        seat_dict: 座位信息，包含预约时间等
     """
+    pid = user["pid"]
     try:
         # 取消原预约
         try:
-            # 初始化图书馆系统（包含VPN登录）
+            log_with_user(logger, 'info', pid, '迟到保护', f"开始处理座位 {dev_name} 的迟到保护")
             library = LibrarySystem(
                 username=user["pid"],
                 password=user["lib_password"],
@@ -331,12 +381,12 @@ def late_protect_action(user: Dict[str, Any], dev_name: str, seat_dict: Dict[str
             # 删除原预约
             success, message = library.delete_seat(seat_dict["uuid"])
             if not success:
-                logger.error(f"迟到保护 >> 取消原预约失败: {message}")
+                log_with_user(logger, 'error', pid, '迟到保护', f"取消原预约失败: {message}")
                 return
-            logger.info(f"迟到保护 >> 成功取消原预约: {seat_dict['uuid']}")
+            log_with_user(logger, 'info', pid, '迟到保护', f"成功取消原预约: {seat_dict['uuid']}")
             
         except Exception as e:
-            logger.error(f"迟到保护 >> 取消原预约异常: {str(e)}")
+            log_with_user(logger, 'error', pid, '迟到保护', f"取消原预约异常: {str(e)}")
             return
         
         # 计算新的预约时间
@@ -355,14 +405,17 @@ def late_protect_action(user: Dict[str, Any], dev_name: str, seat_dict: Dict[str
         new_begin_str = f"{date_str} {new_begin.strftime('%H:%M:%S')}"
         new_end_str = f"{date_str} {new_end.strftime('%H:%M:%S')}"
         
+        log_with_user(logger, 'info', pid, '迟到保护', 
+                     f"调整后的预约时间: {new_begin_str} - {new_end_str}")
+        
         # 获取座位ID
         device = db.devices.find_one({"devName": dev_name}, {"_id": 0, "devId": 1})
         if not device:
-            logger.error(f"迟到保护 >> 未找到座位ID: {dev_name}")
+            log_with_user(logger, 'error', pid, '迟到保护', f"未找到座位ID: {dev_name}")
             return
             
         seat_id = device["devId"]
-        logger.info(f"迟到保护 >> 座位 {dev_name} 的ID为: {seat_id}")
+        log_with_user(logger, 'info', pid, '迟到保护', f"座位 {dev_name} 的ID为: {seat_id}")
         
         # 重新预约
         try:
@@ -371,13 +424,13 @@ def late_protect_action(user: Dict[str, Any], dev_name: str, seat_dict: Dict[str
                 resv_begin_time=new_begin_str,
                 resv_end_time=new_end_str
             )
-            logger.info(f"迟到保护 >> 重新预约 用户:{user['pid']} 座位:{dev_name} "
-                       f"新时间:{new_begin_str}-{new_end_str} 结果:{res_msg}")
+            log_with_user(logger, 'info', pid, '迟到保护', 
+                         f"重新预约结果: {res_msg}")
         except Exception as e:
-            logger.error(f"迟到保护 >> 重新预约失败: {str(e)}")
+            log_with_user(logger, 'error', pid, '迟到保护', f"重新预约失败: {str(e)}")
             
     except Exception as e:
-        logger.error(f"迟到保护 >> 执行失败: {str(e)}")
+        log_with_user(logger, 'error', pid, '迟到保护', f"执行失败: {str(e)}")
 
 def schedule_late_protection_jobs() -> None:
     """
@@ -403,7 +456,7 @@ def schedule_late_protection_jobs() -> None:
         try:
             # 获取需要保护的用户
             users = list(user_config_info.find({"late_protection": "True"}))
-            logger.info(f"找到 {len(users)} 个开启迟到保护的用户")
+            log_with_user(logger, 'info', '系统', '迟到保护', f"找到 {len(users)} 个开启迟到保护的用户")
             
             # 注册保护任务
             for user in users:
@@ -430,18 +483,18 @@ def schedule_late_protection_jobs() -> None:
                                 id=job_id,
                                 replace_existing=True
                             )
-                            logger.info(f"迟到保护 >> 注册任务 用户:{pid} 座位:{dev_name} "
-                                      f"执行时间:{exec_time.strftime('%H:%M:%S')}")
+                            log_with_user(logger, 'info', pid, '迟到保护', 
+                                         f"注册任务 用户:{pid} 座位:{dev_name} 执行时间:{exec_time.strftime('%H:%M:%S')}")
                         else:
-                            logger.info(f"迟到保护 >> 跳过过期任务 用户:{pid} 座位:{dev_name} "
-                                      f"原执行时间:{exec_time.strftime('%H:%M:%S')}")
+                            log_with_user(logger, 'info', pid, '迟到保护', 
+                                          f"跳过过期任务 用户:{pid} 座位:{dev_name} 原执行时间:{exec_time.strftime('%H:%M:%S')}")
         except Exception as e:
-            logger.error(f"注册保护任务时发生异常: {str(e)}")
+            log_with_user(logger, 'error', '系统', '迟到保护', f"注册保护任务时发生异常: {str(e)}")
 
     try:
         # 启动调度器
         scheduler.start()
-        logger.info("迟到保护 >> 调度器已启动")
+        log_with_user(logger, 'info', '系统', '迟到保护', "迟到保护 >> 调度器已启动")
         
         # 立即执行一次任务注册
         register_protection_jobs()
@@ -459,17 +512,17 @@ def schedule_late_protection_jobs() -> None:
         while True:
             now = datetime.now()
             if now.hour >= 22:
-                logger.info("到达22:00，准备退出...")
+                log_with_user(logger, 'info', '系统', '迟到保护', "到达22:00，准备退出...")
                 scheduler.shutdown()
                 break
             time.sleep(30)
             
     except Exception as e:
-        logger.error(f"注册任务时发生异常: {str(e)}")
+        log_with_user(logger, 'error', '系统', '迟到保护', f"注册任务时发生异常: {str(e)}")
         if scheduler.running:
             scheduler.shutdown()
     finally:
-        logger.info("迟到保护服务已停止")
+        log_with_user(logger, 'info', '系统', '迟到保护', "迟到保护服务已停止")
 
 if __name__ == "__main__":
     """
@@ -487,8 +540,8 @@ if __name__ == "__main__":
         process_reservations()
         schedule_late_protection_jobs()
     except KeyboardInterrupt:
-        logger.info("程序被用户中断")
+        log_with_user(logger, 'info', '系统', '程序中断', "程序被用户中断")
     except Exception as e:
-        logger.error(f"程序运行出错: {str(e)}")
+        log_with_user(logger, 'error', '系统', '程序异常', f"程序运行出错: {str(e)}")
     finally:
-        logger.info("程序已退出")
+        log_with_user(logger, 'info', '系统', '程序退出', "程序已退出")

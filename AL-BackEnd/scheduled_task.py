@@ -36,14 +36,11 @@ import os
 import time
 import logging
 from datetime import datetime, timedelta
-from typing import List, Dict, Any, Tuple, Optional
+from typing import List, Dict, Any, Tuple
 
-import requests
 from pymongo import MongoClient, DESCENDING
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from utils.pipeline import Pipeline
-from utils.vpn_system import VPNSystem
 from utils.library_system import LibrarySystem
 from utils import config
 
@@ -51,24 +48,24 @@ from utils import config
 def setup_logging() -> logging.Logger:
     """
     配置日志系统
-    
+
     设置日志格式、输出位置和日志级别。日志同时输出到文件和控制台。
     日志文件路径在 config.LOG_FILE 中配置。
-    
+
     Returns:
         logging.Logger: 配置好的日志记录器
     """
     log_path = os.path.dirname(config.LOG_FILE)
     if not os.path.exists(log_path):
         os.makedirs(log_path)
-    
+
     # 自定义日志格式
     log_format = (
         "[%(asctime)s] [%(levelname)s] "
         "[%(name)s] [用户:%(user)s] "
         "[%(operation)s] - %(message)s"
     )
-    
+
     # 创建自定义过滤器
     class UserFilter(logging.Filter):
         def filter(self, record):
@@ -77,27 +74,27 @@ def setup_logging() -> logging.Logger:
             if not hasattr(record, 'operation'):
                 record.operation = '未知操作'
             return True
-    
+
     # 创建处理器
     file_handler = logging.FileHandler(config.LOG_FILE, encoding="utf-8")
     console_handler = logging.StreamHandler()
-    
+
     # 设置处理器格式
     formatter = logging.Formatter(log_format)
     file_handler.setFormatter(formatter)
     console_handler.setFormatter(formatter)
-    
+
     # 添加过滤器
     user_filter = UserFilter()
     file_handler.addFilter(user_filter)
     console_handler.addFilter(user_filter)
-    
+
     # 配置根日志记录器
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
     root_logger.addHandler(file_handler)
     root_logger.addHandler(console_handler)
-    
+
     # 获取当前模块的日志记录器
     logger = logging.getLogger(__name__)
     return logger
@@ -107,7 +104,7 @@ logger = setup_logging()
 def log_with_user(logger, level: str, user: str, operation: str, message: str) -> None:
     """
     统一的日志记录函数
-    
+
     Args:
         logger: 日志记录器
         level: 日志级别
@@ -135,10 +132,10 @@ users_col = db.users  # 存储用户基本信息
 def get_all_active_reservations() -> List[Dict[str, Any]]:
     """
     获取所有正在预约的记录
-    
+
     从数据库中查询所有标记为活动的预约记录，并按优先级降序排序。
     活动记录的条件是 is_reserved 字段为 "True"。
-    
+
     Returns:
         List[Dict[str, Any]]: 按优先级排序的预约记录列表，每条记录包含完整的预约配置
     """
@@ -147,13 +144,13 @@ def get_all_active_reservations() -> List[Dict[str, Any]]:
 def get_seat_ids(seat_list: List[str]) -> List[str]:
     """
     根据设备名称列表获取设备ID
-    
+
     将用户配置中的座位名称转换为系统内部的座位ID。
     如果某个座位名称在数据库中不存在，会记录警告日志但继续处理其他座位。
-    
+
     Args:
         seat_list: 座位名称列表，如 ["A区-101", "B区-202"]
-        
+
     Returns:
         List[str]: 座位ID列表，如 ["100500174", "100500175"]
     """
@@ -169,26 +166,26 @@ def get_seat_ids(seat_list: List[str]) -> List[str]:
 def calculate_reservation_time(res_item: Dict[str, Any]) -> Tuple[str, str]:
     """
     根据预约模式计算预约时间
-    
+
     支持三种预约模式：
     1. week: 根据星期几选择对应的时间段
     2. tomorrow: 预约明天的时间段
     3. after_tomorrow: 预约后天的时间段
-    
+
     时间格式为 "YYYY-MM-DD HH:MM:SS"
-    
+
     Args:
         res_item: 预约配置项，包含预约模式和时间设置
-        
+
     Returns:
         Tuple[str, str]: (开始时间, 结束时间)
-        
+
     Raises:
         ValueError: 当预约模式不支持时抛出
     """
     mode = res_item["mode"]
     now = datetime.now()
-    
+
     if mode == "week_time":
         # 根据星期几选择时间
         tomorrow = now + timedelta(days=1)
@@ -208,7 +205,7 @@ def calculate_reservation_time(res_item: Dict[str, Any]) -> Tuple[str, str]:
         date_str = tomorrow.strftime("%Y-%m-%d")
     else:
         raise ValueError(f"不支持的预约模式: {mode}")
-    
+
     return (
         f"{date_str} {begin_time}:00",
         f"{date_str} {end_time}:00"
@@ -217,10 +214,10 @@ def calculate_reservation_time(res_item: Dict[str, Any]) -> Tuple[str, str]:
 def update_user_config(pid: str, result: str) -> None:
     """
     更新用户配置信息
-    
+
     直接更新数据库中的用户配置，记录预约结果和更新时间。
     使用 upsert 确保即使记录不存在也能创建新记录。
-    
+
     Args:
         pid: 用户ID（学号）
         result: 预约结果信息
@@ -242,9 +239,9 @@ def update_user_config(pid: str, result: str) -> None:
 def handle_reservation_error(pid: str, error_msg: str) -> None:
     """
     处理预约错误
-    
+
     记录错误日志并更新用户配置，确保用户能看到错误信息。
-    
+
     Args:
         pid: 用户ID
         error_msg: 错误信息
@@ -255,12 +252,12 @@ def handle_reservation_error(pid: str, error_msg: str) -> None:
 def reservation(res_item: Dict[str, Any]) -> None:
     """
     处理单个预约请求
-    
+
     完整的预约流程：
     1. 计算预约时间
     2. 获取座位ID
     3. 登录VPN和图书馆系统
-    4. 执行预约
+    4. 执行预约（最多重试3次）
     5. 更新用户信息
     6. 记录预约结果
     """
@@ -269,68 +266,90 @@ def reservation(res_item: Dict[str, Any]) -> None:
     vpn_password = res_item["vpn_password"]
     lib_password = res_item["lib_password"].replace('！', '!')
     seat_list = res_item["seat_list"]
-    
+
     try:
         # 计算预约时间
         resv_begin_time, resv_end_time = calculate_reservation_time(res_item)
-        log_with_user(logger, 'info', pid, '预约时间', 
+        log_with_user(logger, 'info', pid, '预约时间',
                      f"预约时间: {resv_begin_time} - {resv_end_time}")
-        
+
         # 获取座位ID
         seat_ids = get_seat_ids(seat_list)
         if not seat_ids:
             log_with_user(logger, 'error', pid, '座位获取', "未找到有效的座位ID")
             handle_reservation_error(pid, "未找到有效的座位ID")
             return
-            
-        try:
-            # 初始化图书馆系统
-            log_with_user(logger, 'info', pid, '系统初始化', "开始初始化图书馆系统")
-            library = LibrarySystem(
-                username=pid,
-                password=lib_password,
-                vpn_password=vpn_password
-            )
-            
-            # 执行预约
-            log_with_user(logger, 'info', pid, '预约执行', "开始执行座位预约")
-            res_message, user_info = library.reserve_seat(
-                seat_list=seat_ids,
-                resv_begin_time=resv_begin_time,
-                resv_end_time=resv_end_time
-            )
-            
-            # 记录预约结果
-            log_with_user(logger, 'info', pid, '预约结果', f"预约结果: {res_message}")
-            
-            # 更新用户信息
-            if user_info:
-                library.insert_or_update_mongo(
-                    collection_name="users",
-                    pid=user_info.get("pid"),
-                    data=user_info,
-                    upsert=True
+
+        # 初始化图书馆系统
+        log_with_user(logger, 'info', pid, '系统初始化', "开始初始化图书馆系统")
+        library = LibrarySystem(
+            username=pid,
+            password=lib_password,
+            vpn_password=vpn_password
+        )
+
+        # 执行预约（带重试机制）
+        max_retries = 3
+        retry_count = 0
+        last_error = None
+
+        while retry_count < max_retries:
+            try:
+                log_with_user(logger, 'info', pid, '预约执行', f"开始执行座位预约 (第{retry_count + 1}次尝试)")
+                res_message, user_info = library.reserve_seat(
+                    seat_list=seat_ids,
+                    resv_begin_time=resv_begin_time,
+                    resv_end_time=resv_end_time
                 )
-                log_with_user(logger, 'info', pid, '用户信息', "用户信息已更新")
-            
-            # 更新预约结果
-            update_user_config(pid, res_message)
-            
-            # 获取最新的预约信息
-            reservations, message = library.get_reservation_info()
-            if reservations:
-                log_with_user(logger, 'info', pid, '预约状态', f"当前预约状态: {message}")
-                for res in reservations:
-                    log_with_user(logger, 'info', pid, '预约详情', 
-                                f"座位 {res.get('devInfo', {}).get('devName', '未知')} "
-                                f"时间 {res.get('resvBeginTime')} - {res.get('resvEndTime')} "
-                                f"状态 {res.get('resvStatus')}")
-                              
-        except Exception as e:
-            error_msg = f"登录或预约过程发生异常: {str(e)}"
-            log_with_user(logger, 'error', pid, '预约异常', error_msg)
-            handle_reservation_error(pid, error_msg)
-            
+
+                # 检查预约结果
+                if "成功" in res_message or "预约成功" in res_message:
+                    log_with_user(logger, 'info', pid, '预约结果', f"预约成功 (第{retry_count + 1}次尝试): {res_message}")
+
+                    # 更新用户信息
+                    if user_info:
+                        library.insert_or_update_mongo(
+                            collection_name="users",
+                            pid=user_info.get("pid"),
+                            data=user_info,
+                            upsert=True
+                        )
+                        log_with_user(logger, 'info', pid, '用户信息', "用户信息已更新")
+
+                    # 更新预约结果
+                    update_user_config(pid, res_message)
+
+                    # 获取最新的预约信息
+                    reservations, message = library.get_reservation_info()
+                    if reservations:
+                        log_with_user(logger, 'info', pid, '预约状态', f"当前预约状态: {message}")
+                        for res in reservations:
+                            log_with_user(logger, 'info', pid, '预约详情',
+                                        f"座位 {res.get('devInfo', {}).get('devName', '未知')} "
+                                        f"时间 {res.get('resvBeginTime')} - {res.get('resvEndTime')} "
+                                        f"状态 {res.get('resvStatus')}")
+                    return  # 预约成功，直接返回
+                else:
+                    last_error = res_message
+                    log_with_user(logger, 'warning', pid, '预约结果',
+                                f"预约返回非成功状态 (第{retry_count + 1}次尝试): {res_message}")
+
+            except Exception as e:
+                last_error = str(e)
+                log_with_user(logger, 'error', pid, '预约异常',
+                            f"预约过程发生异常 (第{retry_count + 1}次尝试): {str(e)}")
+
+            retry_count += 1
+            if retry_count < max_retries:
+                log_with_user(logger, 'info', pid, '预约重试',
+                            f"等待1秒后进行第{retry_count + 1}次重试...")
+                time.sleep(1)
+
+        # 所有重试都失败
+        error_msg = f"预约失败，已重试{max_retries}次，最后一次错误: {last_error}"
+        log_with_user(logger, 'error', pid, '预约失败', error_msg)
+        handle_reservation_error(pid, error_msg)
+
     except Exception as e:
         error_msg = f"预约过程发生异常: {str(e)}"
         log_with_user(logger, 'error', pid, '预约异常', error_msg)
@@ -339,19 +358,19 @@ def reservation(res_item: Dict[str, Any]) -> None:
 def process_reservations() -> None:
     """
     处理所有预约请求
-    
+
     工作流程：
     1. 获取所有活动预约记录
     2. 按优先级顺序处理每个预约
     3. 记录处理结果
-    
+
     每个预约都是独立处理的，一个预约的失败不会影响其他预约。
     """
     active_list = get_all_active_reservations()
     if not active_list:
         log_with_user(logger, 'info', '系统', '预约处理', "没有正在预约中的记录")
         return
-        
+
     log_with_user(logger, 'info', '系统', '预约处理', f"开始处理预约列表，共 {len(active_list)} 条")
     for item in active_list:
         log_with_user(logger, 'info', item['pid'], '预约处理', f"预约学号: {item['pid']}, 优先级: {item['priority']}")
@@ -361,11 +380,11 @@ def process_reservations() -> None:
 def late_protect_action(user: Dict[str, Any], dev_name: str, seat_dict: Dict[str, Any]) -> None:
     """
     执行迟到保护动作
-    
+
     迟到保护流程：
     1. 取消原预约
     2. 计算新的预约时间（延后1小时）
-    3. 重新预约座位
+    3. 重新预约座位（最多重试3次）
     """
     pid = user["pid"]
     try:
@@ -377,57 +396,83 @@ def late_protect_action(user: Dict[str, Any], dev_name: str, seat_dict: Dict[str
                 password=user["lib_password"],
                 vpn_password=user["vpn_password"]
             )
-            
+
             # 删除原预约
             success, message = library.delete_seat(seat_dict["uuid"])
             if not success:
                 log_with_user(logger, 'error', pid, '迟到保护', f"取消原预约失败: {message}")
                 return
             log_with_user(logger, 'info', pid, '迟到保护', f"成功取消原预约: {seat_dict['uuid']}")
-            
+
         except Exception as e:
             log_with_user(logger, 'error', pid, '迟到保护', f"取消原预约异常: {str(e)}")
             return
-        
+
         # 计算新的预约时间
         target_time = seat_dict['target_time']
         date_str, time_range = target_time.split(' ')
         begin_time_str, end_time_str = time_range.split('-')
-        
+
         begin_time = datetime.strptime(f"{date_str} {begin_time_str}", "%Y-%m-%d %H:%M:%S")
         end_time = datetime.strptime(f"{date_str} {end_time_str}", "%Y-%m-%d %H:%M:%S")
-        
+
         # 调整时间
         new_begin = begin_time + timedelta(hours=1)
         duration = (end_time - new_begin).total_seconds() / 3600
         new_end = end_time + timedelta(hours=1) if duration < 2 else end_time
-        
+
         new_begin_str = f"{date_str} {new_begin.strftime('%H:%M:%S')}"
         new_end_str = f"{date_str} {new_end.strftime('%H:%M:%S')}"
-        
-        log_with_user(logger, 'info', pid, '迟到保护', 
+
+        log_with_user(logger, 'info', pid, '迟到保护',
                      f"调整后的预约时间: {new_begin_str} - {new_end_str}")
-        
+
         # 获取座位ID
         device = db.devices.find_one({"devName": dev_name}, {"_id": 0, "devId": 1})
         if not device:
             log_with_user(logger, 'error', pid, '迟到保护', f"未找到座位ID: {dev_name}")
             return
-            
+
         seat_id = device["devId"]
         log_with_user(logger, 'info', pid, '迟到保护', f"座位 {dev_name} 的ID为: {seat_id}")
-        
-        # 重新预约
-        try:
-            res_msg, _ = library.reserve_seat(
-                seat_list=[seat_id],
-                resv_begin_time=new_begin_str,
-                resv_end_time=new_end_str
-            )
-            log_with_user(logger, 'info', pid, '迟到保护', 
-                         f"重新预约结果: {res_msg}")
-        except Exception as e:
-            log_with_user(logger, 'error', pid, '迟到保护', f"重新预约失败: {str(e)}")
+
+        # 重新预约（带重试机制）
+        max_retries = 3
+        retry_count = 0
+        last_error = None
+
+        while retry_count < max_retries:
+            try:
+                res_msg, _ = library.reserve_seat(
+                    seat_list=[seat_id],
+                    resv_begin_time=new_begin_str,
+                    resv_end_time=new_end_str
+                )
+
+                # 检查预约结果是否成功
+                if "成功" in res_msg or "预约成功" in res_msg:
+                    log_with_user(logger, 'info', pid, '迟到保护',
+                                f"重新预约成功 (第{retry_count + 1}次尝试): {res_msg}")
+                    return
+                else:
+                    last_error = res_msg
+                    log_with_user(logger, 'warning', pid, '迟到保护',
+                                f"预约返回非成功状态 (第{retry_count + 1}次尝试): {res_msg}")
+
+            except Exception as e:
+                last_error = str(e)
+                log_with_user(logger, 'error', pid, '迟到保护',
+                            f"重新预约异常 (第{retry_count + 1}次尝试): {str(e)}")
+
+            retry_count += 1
+            if retry_count < max_retries:
+                log_with_user(logger, 'info', pid, '迟到保护',
+                            f"等待5秒后进行第{retry_count + 1}次重试...")
+                time.sleep(5)
+
+        # 所有重试都失败
+        log_with_user(logger, 'error', pid, '迟到保护',
+                     f"重新预约失败，已重试{max_retries}次，最后一次错误: {last_error}")
             
     except Exception as e:
         log_with_user(logger, 'error', pid, '迟到保护', f"执行失败: {str(e)}")

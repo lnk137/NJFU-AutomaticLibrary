@@ -60,14 +60,15 @@ mongo_client = MongoClient(f"mongodb://{config.DB_IP}/")
 db = mongo_client.AutoLib
 user_config_info = db.user_config_info  # 存储用户配置和预约记录
 users_col = db.users  # 存储用户基本信息
+devices_col = db.devices  # 存储设备信息
 
 class LibrarySystem(BaseSystem):
     """
     图书馆座位预约系统类
-    
+
     处理所有与图书馆座位预约系统相关的操作，包括登录、预约、查询等。
     继承自 BaseSystem，使用共享的会话管理。
-    
+
     Attributes:
         base_url (str): 图书馆系统基础URL
         vpn_suffix (str): VPN访问后缀
@@ -75,11 +76,11 @@ class LibrarySystem(BaseSystem):
         session (requests.Session): HTTP会话对象
         vpn (Optional[VPNSystem]): VPN系统实例
     """
-    
+
     # 系统URL配置
-    BASE_URL = "https://webvpn.njfu.edu.cn/webvpn/LjIwMS4xNkuMjE4LjE2OC4xNjc=/LjIwNS4xNTguMjAwLjE3MS4xNTMuMTUwLjIxNi45Ny4yMTEuMTU2LjE1OC4xNzMuMTQ4LjE1NS4xNTUuMjE3LjEwMC4xNTAuMTY1/"
+    BASE_URL = "https://webvpn.njfu.edu.cn/webvpn/LjIwMS4xNjkuMjE4LjE2OC4xNjc=/LjIwNS4xNTguMjAwLjE3MS4xNTMuMTUwLjIxNi45Ny4yMTEuMTU2LjE1OC4xNzMuMTQ4LjE1NS4xNTUuMjE3LjEwMC4xNTAuMTY1/"
     VPN_SUFFIX = "?vpn-12-libseat.njfu.edu.cn"
-    
+
     def __init__(
         self,
         username: str,
@@ -89,7 +90,7 @@ class LibrarySystem(BaseSystem):
     ) -> None:
         """
         初始化图书馆系统对象
-        
+
         Args:
             username: 用户名（学号）
             password: 图书馆密码
@@ -102,49 +103,69 @@ class LibrarySystem(BaseSystem):
             base_url=self.BASE_URL,
             vpn_suffix=self.VPN_SUFFIX
         )
-        
+
         # 系统URL
         self.public_key_url = f"{self.base_url}ic-web/login/publicKey{self.vpn_suffix}"
         self.login_url = f"{self.base_url}ic-web/login/user{self.vpn_suffix}"
         self.reserve_url = f"{self.base_url}ic-web/reserve{self.vpn_suffix}"
-        
+
         # 用户信息
         self.user_info: Optional[Dict[str, Any]] = None
         self.vpn: Optional[VPNSystem] = None
-        
+
         # 使用共享会话或创建新会话
         if session:
             self.session = session
         else:
             self.session = requests.Session()
-            
+
         # 如果提供了VPN密码，先登录VPN
         if vpn_password:
             self._initialize_vpn(vpn_password)
-            
+
         # 初始化登录
         self._initialize_login()
+
+    def get_seat_name_by_id(self, seat_id: str) -> str:
+        """
+        根据座位ID获取座位名称
+
+        Args:
+            seat_id: 座位ID
+
+        Returns:
+            str: 座位名称，如果未找到则返回座位ID
+        """
+        try:
+            device = devices_col.find_one({"devId": seat_id}, {"_id": 0, "devName": 1})
+            if device:
+                return device["devName"]
+            else:
+                return seat_id
+        except Exception as e:
+            log_with_user('warning', self.username, '座位名称获取', f"获取座位 {seat_id} 名称失败: {str(e)}")
+            return seat_id
 
     def _initialize_vpn(self, vpn_password: str) -> None:
         """
         初始化并登录VPN
-        
+
         Args:
             vpn_password: VPN密码
-            
+
         Raises:
             Exception: VPN登录失败时抛出异常
         """
         try:
             self.vpn = VPNSystem(self.username, vpn_password)
             self.vpn.session = self.session
-            
+
             if not self.vpn.vpn_login():
                 raise Exception("VPN登录失败")
 
             # 等待VPN连接稳定（0.5秒）
             time.sleep(0.1)
-            
+
         except Exception as e:
             print(f"VPN登录失败: {str(e)}")
             raise
@@ -152,13 +173,13 @@ class LibrarySystem(BaseSystem):
     def _initialize_login(self) -> None:
         """
         初始化登录流程
-        
+
         执行完整的登录流程：
         1. 获取初始Cookie
         2. 获取公钥
         3. 加密密码并登录
         4. 设置用户Cookie
-        
+
         Raises:
             Exception: 登录过程中的任何步骤失败都会抛出异常，包含具体原因
         """
@@ -183,9 +204,9 @@ class LibrarySystem(BaseSystem):
     def ensure_login(self) -> Optional[Dict[str, Any]]:
         """
         确保登录状态
-        
+
         Checks the current login status and re-logs in if not logged in
-        
+
         Returns:
             Optional[Dict[str, Any]]: 用户信息字典，登录失败返回None
         """
@@ -196,7 +217,7 @@ class LibrarySystem(BaseSystem):
     def _get_initial_cookie(self) -> bool:
         """
         获取初始Cookie
-        
+
         Returns:
             bool: 是否成功获取Cookie
         """
@@ -213,7 +234,7 @@ class LibrarySystem(BaseSystem):
     def _get_public_key(self) -> Tuple[Optional[str], Optional[str]]:
         """
         获取登录所需的公钥和随机字符串
-        
+
         Returns:
             Tuple[Optional[str], Optional[str]]: (公钥, 随机字符串)，获取失败返回(None, None)
         """
@@ -236,11 +257,11 @@ class LibrarySystem(BaseSystem):
     def _perform_login(self, public_key: str, nonce: str) -> Optional[Dict[str, Any]]:
         """
         执行登录请求
-        
+
         Args:
             public_key: RSA公钥
             nonce: 随机字符串
-            
+
         Returns:
             Optional[Dict[str, Any]]: 登录成功返回用户信息，失败返回None
         """
@@ -250,7 +271,7 @@ class LibrarySystem(BaseSystem):
                 PasswordEncryptor.set_public_key(public_key),
                 f"{self.password};{nonce}"
             )
-            
+
             # 发送登录请求
             login_data = {
                 "logonName": self.username,
@@ -277,7 +298,7 @@ class LibrarySystem(BaseSystem):
     def _set_user_cookie(self, user_info: Dict[str, Any]) -> None:
         """
         设置用户Cookie
-        
+
         Args:
             user_info: 用户信息字典
         """
@@ -300,7 +321,7 @@ class LibrarySystem(BaseSystem):
     def get_user_info(self) -> Optional[Dict[str, Any]]:
         """
         获取用户信息
-        
+
         Returns:
             Optional[Dict[str, Any]]: 用户信息字典，包含必要的用户字段
         """
@@ -308,7 +329,7 @@ class LibrarySystem(BaseSystem):
             self.ensure_login()
             if not self.user_info:
                 return None
-                
+
             return {
                 'uuid': self.user_info['uuid'],
                 'accNo': self.user_info['accNo'],
@@ -328,11 +349,11 @@ class LibrarySystem(BaseSystem):
     def get_reservation_time(begin_time: str = "10:30", end_time: str = "22:00") -> Tuple[str, str]:
         """
         生成预约时间
-        
+
         Args:
             begin_time: 开始时间，格式 HH:MM
             end_time: 结束时间，格式 HH:MM
-            
+
         Returns:
             Tuple[str, str]: (开始时间, 结束时间)，格式 YYYY-MM-DD HH:MM:SS
         """
@@ -352,16 +373,19 @@ class LibrarySystem(BaseSystem):
     ) -> str:
         """
         预约单个座位
-        
+
         Args:
             user_info: 用户信息
             seat_id: 座位ID
             resv_begin_time: 预约开始时间
             resv_end_time: 预约结束时间
-            
+
         Returns:
             str: 预约结果消息
         """
+        # 获取座位名称
+        seat_name = self.get_seat_name_by_id(seat_id)
+
         # 准备预约数据
         resv_data = {
             "testName": "",
@@ -376,28 +400,50 @@ class LibrarySystem(BaseSystem):
         }
 
         # 发送预约请求
-        response = self.session.post(self.reserve_url, json=resv_data)
-        print(f"预约座位 {seat_id} 响应状态码: {response.status_code}")
+        try:
+            response = self.session.post(self.reserve_url, json=resv_data)
+            log_with_user('info', self.username, '预约请求',
+                         f"座位 {seat_name}({seat_id}) 响应状态码: {response.status_code}")
 
-        if response.status_code != 200:
-            return f"座位 {seat_id} 请求失败: 状态码 {response.status_code}"
+            # 记录响应内容用于调试
+            log_with_user('debug', self.username, '预约响应',
+                         f"座位 {seat_name}({seat_id}) 响应内容: {response.text}")
 
-        # 处理响应结果
-        result = response.json()
-        target_time = f"{resv_begin_time[:10]} {resv_begin_time[11:]}-{resv_end_time[11:]}"
-        
-        if result.get('code') == 0:
-            # 预约成功
-            success_info = result['data']
-            return (
-                f"{success_info['resvName']} 期望预约时间{target_time} "
-                f"预约成功 {result['message']} "
-                f"{success_info['resvDevInfoList'][0]['roomName']} "
-                f"{success_info['resvDevInfoList'][0]['devName']}"
-            )
-        else:
-            # 预约失败
-            return f"期望预约时间{target_time} 预约失败 {result['message']}"
+            if response.status_code != 200:
+                error_msg = f"座位 {seat_name}({seat_id}) 请求失败: 状态码 {response.status_code}"
+                log_with_user('error', self.username, '预约失败', error_msg)
+                return error_msg
+
+            # 处理响应结果
+            result = response.json()
+            target_time = f"{resv_begin_time[:10]} {resv_begin_time[11:]}-{resv_end_time[11:]}"
+
+            if result.get('code') == 0:
+                # 预约成功
+                success_info = result['data']
+                success_msg = (
+                    f"{success_info['resvName']} 期望预约时间{target_time} "
+                    f"预约成功 {result['message']} "
+                    f"{success_info['resvDevInfoList'][0]['roomName']} "
+                    f"{success_info['resvDevInfoList'][0]['devName']}"
+                )
+                log_with_user('info', self.username, '预约成功',
+                             f"座位 {seat_name}({seat_id}) 预约成功: {success_msg}")
+                return success_msg
+            else:
+                # 预约失败
+                error_msg = f"座位 {seat_name}({seat_id}) 期望预约时间{target_time} 预约失败: {result['message']}"
+                log_with_user('error', self.username, '预约失败', error_msg)
+                return error_msg
+
+        except requests.exceptions.RequestException as e:
+            error_msg = f"座位 {seat_name}({seat_id}) 网络请求异常: {str(e)}"
+            log_with_user('error', self.username, '预约异常', error_msg)
+            return error_msg
+        except Exception as e:
+            error_msg = f"座位 {seat_name}({seat_id}) 预约过程异常: {str(e)}"
+            log_with_user('error', self.username, '预约异常', error_msg)
+            return error_msg
 
     def reserve_seat(
         self,
@@ -407,12 +453,12 @@ class LibrarySystem(BaseSystem):
     ) -> Tuple[str, Optional[Dict[str, Any]]]:
         """
         预约指定座位列表
-        
+
         Args:
             seat_list: 座位ID列表
             resv_begin_time: 预约开始时间
             resv_end_time: 预约结束时间
-            
+
         Returns:
             Tuple[str, Optional[Dict[str, Any]]]: (预约结果消息, 用户信息)
         """
@@ -420,29 +466,45 @@ class LibrarySystem(BaseSystem):
             # 确保登录状态
             self.ensure_login()
             if not self.user_info:
-                return "无已预约结果", None
+                error_msg = "用户信息获取失败，无法进行预约"
+                log_with_user('error', self.username, '预约', error_msg)
+                return error_msg, None
 
             # 尝试预约每个座位
+            failed_seats = []
             for seat_id in seat_list:
-                log_with_user('info', self.username, '预约', f"尝试预约座位: {seat_id}")
+                seat_name = self.get_seat_name_by_id(seat_id)
+                log_with_user('info', self.username, '预约', f"尝试预约座位: {seat_name}({seat_id})")
+
                 res_message = self._reserve_single_seat(
                     self.user_info,
                     seat_id,
                     resv_begin_time,
                     resv_end_time
                 )
+
                 if "预约成功" in res_message:
-                    log_with_user('info', self.username, '预约', f"座位 {seat_id} 预约成功")
-                    break
-                    
-            # 获取最新预约信息
-            reservations, _ = self.get_reservation_info()
-            return res_message, self.user_info
+                    log_with_user('info', self.username, '预约', f"座位 {seat_name}({seat_id}) 预约成功")
+                    return res_message, self.user_info
+                else:
+                    failed_seats.append(f"{seat_name}({seat_id}): {res_message}")
+                    log_with_user('warning', self.username, '预约',
+                                 f"座位 {seat_name}({seat_id}) 预约失败: {res_message}")
+
+            # 所有座位都预约失败
+            if failed_seats:
+                error_msg = f"所有座位预约失败，详细原因:\n" + "\n".join(failed_seats)
+                log_with_user('error', self.username, '预约', error_msg)
+                return error_msg, self.user_info
+            else:
+                error_msg = "没有可用的座位进行预约"
+                log_with_user('error', self.username, '预约', error_msg)
+                return error_msg, self.user_info
 
         except Exception as e:
             error_msg = f"预约过程出现异常: {str(e)}"
             log_with_user('error', self.username, '预约', error_msg)
-            return "无已预约结果", None
+            return error_msg, None
 
     def delete_seat(self, uuid: str) -> Tuple[bool, str]:
         """

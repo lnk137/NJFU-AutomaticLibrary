@@ -19,19 +19,20 @@ try:
     print("正在测试连接...")
     mongo_client.admin.command('ping')
     print(f"正在选择数据库: {config.DB_NAME}")
-    db = mongo_client[config.DB_NAME] # 使用配置的数据库名
+    db = mongo_client[config.DB_NAME]  # 使用配置的数据库名
     user_cfg = db.user_config_info
     ann = db.announcements
     print("✅ MongoDB 连接成功！(应用未启用密码验证)")
 except Exception as e:
     import traceback
-    print("="*50)
+
+    print("=" * 50)
     print("❌ MongoDB 连接失败！")
     print(f"错误类型: {type(e).__name__}")
     print(f"错误信息: {str(e)}")
     print("详细堆栈:")
     print(traceback.format_exc())
-    print("="*50)
+    print("=" * 50)
     print("提示：MongoDB 服务器可能仍然需要认证，或者连接地址/端口有误。")
 
 
@@ -73,6 +74,13 @@ def insert_full_reservation():
       "priority": ...,
       "is_reserved": ...
     }
+    返回:
+    {
+      "message": "预约配置已更新",
+      "data": {
+        // 更新后的完整数据
+      }
+    }
     """
     data, err = get_json_or_400()
     if err:
@@ -80,12 +88,48 @@ def insert_full_reservation():
     if 'pid' not in data:
         return jsonify({"error": "缺少 pid"}), 400
 
-    # 直接使用整个 data 作为文档内容，并追加更新时间
-    rec = data.copy()
-    rec['updated_at'] = datetime.utcnow()
+    # 获取原有数据
+    existing_data = user_cfg.find_one({"pid": data["pid"]})
 
-    result, code = upsert_collection(user_cfg, {"pid": rec['pid']}, rec)
-    return jsonify(result), code
+    # 如果存在原有数据，则合并新旧数据
+    if existing_data:
+        # 删除MongoDB的_id字段
+        if "_id" in existing_data:
+            del existing_data["_id"]
+
+        # 特殊处理priority字段
+        if "priority" not in existing_data:
+            existing_data["priority"] = 0
+
+        # 更新原有数据中的字段
+        for key, value in data.items():
+            if value is not None:  # 只更新非None的字段
+                existing_data[key] = value
+        # 更新更新时间
+        existing_data['updated_at'] = datetime.utcnow()
+        # 使用更新后的数据
+        rec = existing_data
+    else:
+        # 如果是新数据，直接使用
+        rec = data.copy()
+        # 如果是新用户且没有priority字段，设置为0
+        if "priority" not in rec:
+            rec["priority"] = 0
+        rec['updated_at'] = datetime.utcnow()
+
+    # 更新数据库
+    user_cfg.update_one(
+        {"pid": data["pid"]},
+        {"$set": rec},
+        upsert=True
+    )
+
+    # 返回更新后的完整数据
+    return jsonify({
+        "message": "预约配置已更新",
+        "data": rec
+    })
+
 
 @database_bp.route("/reservation", methods=["POST"])
 def insert_or_update_reservation():
@@ -257,7 +301,7 @@ def get_announcements():
 def query_reservation_info():
     """
     查询用户的预约信息
-    
+
     请求体:
     {
         "pid": "学号",
@@ -268,7 +312,7 @@ def query_reservation_info():
         "page": 页码(可选),
         "page_num": 每页记录数(可选)
     }
-    
+
     返回:
     {
         "message": "查询结果消息",
@@ -292,13 +336,13 @@ def query_reservation_info():
     data, err = get_json_or_400()
     if err:
         return jsonify(*err)
-        
+
     # 验证必要字段
     required = ["pid", "vpn_password", "lib_password"]
     missing = [f for f in required if f not in data]
     if missing:
         return jsonify({"error": f"缺少必要字段: {', '.join(missing)}"}), 400
-        
+
     try:
         # 初始化图书馆系统
         library = LibrarySystem(
@@ -306,13 +350,13 @@ def query_reservation_info():
             password=data["lib_password"],
             vpn_password=data["vpn_password"]
         )
-        
+
         # 获取查询参数
         begin_date = data.get("begin_date")
         end_date = data.get("end_date")
         page = int(data.get("page", 1))
         page_num = int(data.get("page_num", 10))
-        
+
         # 查询预约信息
         reservations, message = library.get_reservation_info(
             begin_date=begin_date,
@@ -320,15 +364,15 @@ def query_reservation_info():
             page=page,
             page_num=page_num
         )
-        
+
         if reservations is None:
             return jsonify({"error": message}), 500
-            
+
         return jsonify({
             "message": message,
             "reservations": reservations
         }), 200
-        
+
     except Exception as e:
         return jsonify({"error": f"查询预约信息失败: {str(e)}"}), 500
 
@@ -337,7 +381,7 @@ def query_reservation_info():
 def delete_reservation():
     """
     删除预约座位
-    
+
     请求体:
     {
         "pid": "学号",
@@ -345,7 +389,7 @@ def delete_reservation():
         "lib_password": "图书馆密码",
         "uuid": "预约记录的UUID"
     }
-    
+
     返回:
     {
         "message": "操作结果消息",
@@ -355,13 +399,13 @@ def delete_reservation():
     data, err = get_json_or_400()
     if err:
         return jsonify(*err)
-        
+
     # 验证必要字段
     required = ["pid", "vpn_password", "lib_password", "uuid"]
     missing = [f for f in required if f not in data]
     if missing:
         return jsonify({"error": f"缺少必要字段: {', '.join(missing)}"}), 400
-        
+
     try:
         # 初始化图书馆系统
         library = LibrarySystem(
@@ -369,15 +413,15 @@ def delete_reservation():
             password=data["lib_password"],
             vpn_password=data["vpn_password"]
         )
-        
+
         # 删除预约
         success, message = library.delete_seat(data["uuid"])
-        
+
         return jsonify({
             "message": message,
             "success": success
         }), 200 if success else 500
-        
+
     except Exception as e:
         return jsonify({
             "error": f"删除预约失败: {str(e)}",
@@ -389,12 +433,12 @@ def delete_reservation():
 def get_user_result():
     """
     查询用户的预约结果信息
-    
+
     请求体:
     {
         "pid": "学号"
     }
-    
+
     返回:
     {
         "message": "查询结果消息",
@@ -404,22 +448,22 @@ def get_user_result():
     data, err = get_json_or_400()
     if err:
         return jsonify(*err)
-        
+
     # 验证必要字段
     if "pid" not in data:
         return jsonify({"error": "缺少必要字段: pid"}), 400
-        
+
     try:
         # 查询用户配置中的 result 字段
         user_record = user_cfg.find_one(
             {"pid": data["pid"]},
             {"result": 1, "_id": 0}
         )
-        
+
         return jsonify({
             "message": "查询成功",
             "result": user_record.get("result", "") if user_record else ""
         }), 200
-        
+
     except Exception as e:
         return jsonify({"error": f"查询预约结果失败: {str(e)}"}), 500

@@ -15,8 +15,8 @@ VPN_PASSWORD = os.getenv("VPN_PASSWORD")
 VPN_USERNAME = os.getenv("VPN_USERNAME")
 
 # 服务器配置
-SERVER_IP = os.getenv("SERVER_IP")
-DB_IP = os.getenv("DB_IP")
+SERVER_IP = os.getenv("SERVER_IP", "127.0.0.1:5001")
+DB_IP = os.getenv("DB_IP", "103.38.80.17:27018")
 
 # 日志配置
 LOG_FILE = os.getenv("LOG_FILE", "logs/auto_lib.log")  # 添加默认值

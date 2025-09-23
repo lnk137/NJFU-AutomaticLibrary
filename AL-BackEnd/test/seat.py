@@ -1,4 +1,5 @@
 import re
+import os
 
 # 定义一个函数提取 devId 和 devName
 def extract_dev_pairs(file_path):
@@ -21,13 +22,19 @@ def extract_dev_pairs(file_path):
 
 # 保存结果到文件的函数
 def save_dev_pairs_to_file(dev_pairs, output_file):
+    output_dir = os.path.dirname(output_file)
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir, exist_ok=True)
     with open(output_file, 'w', encoding='utf-8') as file:
         for dev_id, dev_name in dev_pairs:
             file.write(f"devId: {dev_id}, devName: {dev_name}\n")
 
 # 示例使用
-file_path = "../4A夹"  # 替换为你的文件路径
-output_file = "../座位信息/四楼夹层座位.txt"  # 输出文件名
+file_path = "3.txt"  # 替换为你的文件路径
+output_file = "../座位信息/三楼夹层座位"  # 输出文件名
+output_dir = os.path.dirname(output_file)
+if not os.path.exists(output_dir):
+    os.makedirs(output_dir, exist_ok=True)
 
 result = extract_dev_pairs(file_path)
 save_dev_pairs_to_file(result, output_file)

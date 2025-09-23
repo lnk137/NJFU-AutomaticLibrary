@@ -36,11 +36,14 @@ import os
 import time
 import logging
 from datetime import datetime, timedelta
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 
+import requests
 from pymongo import MongoClient, DESCENDING
 from apscheduler.schedulers.background import BackgroundScheduler
 
+from utils.pipeline import Pipeline
+from utils.vpn_system import VPNSystem
 from utils.library_system import LibrarySystem
 from utils import config
 
@@ -288,67 +291,51 @@ def reservation(res_item: Dict[str, Any]) -> None:
             vpn_password=vpn_password
         )
 
-        # 执行预约（带重试机制）
-        max_retries = 3
-        retry_count = 0
-        last_error = None
+        # 执行预约（单次尝试，不重试）
+        try:
+            log_with_user(logger, 'info', pid, '预约执行', "开始执行座位预约")
+            res_message, user_info = library.reserve_seat(
+                seat_list=seat_ids,
+                resv_begin_time=resv_begin_time,
+                resv_end_time=resv_end_time
+            )
 
-        while retry_count < max_retries:
-            try:
-                log_with_user(logger, 'info', pid, '预约执行', f"开始执行座位预约 (第{retry_count + 1}次尝试)")
-                res_message, user_info = library.reserve_seat(
-                    seat_list=seat_ids,
-                    resv_begin_time=resv_begin_time,
-                    resv_end_time=resv_end_time
-                )
+            # 检查预约结果
+            if "成功" in res_message or "预约成功" in res_message:
+                log_with_user(logger, 'info', pid, '预约结果', f"预约成功: {res_message}")
 
-                # 检查预约结果
-                if "成功" in res_message or "预约成功" in res_message:
-                    log_with_user(logger, 'info', pid, '预约结果', f"预约成功 (第{retry_count + 1}次尝试): {res_message}")
+                # 更新用户信息
+                if user_info:
+                    library.insert_or_update_mongo(
+                        collection_name="users",
+                        pid=user_info.get("pid"),
+                        data=user_info,
+                        upsert=True
+                    )
+                    log_with_user(logger, 'info', pid, '用户信息', "用户信息已更新")
 
-                    # 更新用户信息
-                    if user_info:
-                        library.insert_or_update_mongo(
-                            collection_name="users",
-                            pid=user_info.get("pid"),
-                            data=user_info,
-                            upsert=True
-                        )
-                        log_with_user(logger, 'info', pid, '用户信息', "用户信息已更新")
+                # 更新预约结果
+                update_user_config(pid, res_message)
 
-                    # 更新预约结果
-                    update_user_config(pid, res_message)
+                # 获取最新的预约信息
+                reservations, message = library.get_reservation_info()
+                if reservations:
+                    log_with_user(logger, 'info', pid, '预约状态', f"当前预约状态: {message}")
+                    for res in reservations:
+                        log_with_user(logger, 'info', pid, '预约详情',
+                                    f"座位 {res.get('devInfo', {}).get('devName', '未知')} "
+                                    f"时间 {res.get('resvBeginTime')} - {res.get('resvEndTime')} "
+                                    f"状态 {res.get('resvStatus')}")
+                return  # 预约成功，直接返回
+            else:
+                error_msg = f"预约失败: {res_message}"
+                log_with_user(logger, 'error', pid, '预约失败', error_msg)
+                handle_reservation_error(pid, error_msg)
 
-                    # 获取最新的预约信息
-                    reservations, message = library.get_reservation_info()
-                    if reservations:
-                        log_with_user(logger, 'info', pid, '预约状态', f"当前预约状态: {message}")
-                        for res in reservations:
-                            log_with_user(logger, 'info', pid, '预约详情',
-                                        f"座位 {res.get('devInfo', {}).get('devName', '未知')} "
-                                        f"时间 {res.get('resvBeginTime')} - {res.get('resvEndTime')} "
-                                        f"状态 {res.get('resvStatus')}")
-                    return  # 预约成功，直接返回
-                else:
-                    last_error = res_message
-                    log_with_user(logger, 'warning', pid, '预约结果',
-                                f"预约返回非成功状态 (第{retry_count + 1}次尝试): {res_message}")
-
-            except Exception as e:
-                last_error = str(e)
-                log_with_user(logger, 'error', pid, '预约异常',
-                            f"预约过程发生异常 (第{retry_count + 1}次尝试): {str(e)}")
-
-            retry_count += 1
-            if retry_count < max_retries:
-                log_with_user(logger, 'info', pid, '预约重试',
-                            f"等待1秒后进行第{retry_count + 1}次重试...")
-                time.sleep(1)
-
-        # 所有重试都失败
-        error_msg = f"预约失败，已重试{max_retries}次，最后一次错误: {last_error}"
-        log_with_user(logger, 'error', pid, '预约失败', error_msg)
-        handle_reservation_error(pid, error_msg)
+        except Exception as e:
+            error_msg = f"预约过程发生异常: {str(e)}"
+            log_with_user(logger, 'error', pid, '预约异常', error_msg)
+            handle_reservation_error(pid, error_msg)
 
     except Exception as e:
         error_msg = f"预约过程发生异常: {str(e)}"
@@ -453,6 +440,12 @@ def late_protect_action(user: Dict[str, Any], dev_name: str, seat_dict: Dict[str
                 if "成功" in res_msg or "预约成功" in res_msg:
                     log_with_user(logger, 'info', pid, '迟到保护',
                                 f"重新预约成功 (第{retry_count + 1}次尝试): {res_msg}")
+                    # 新增：同步 owned_seat，保证多次保护
+                    try:
+                        library.get_reservation_info()
+                        log_with_user(logger, 'info', pid, '迟到保护', "已同步最新预约信息到数据库")
+                    except Exception as e:
+                        log_with_user(logger, 'warning', pid, '迟到保护', f"同步预约信息失败: {str(e)}")
                     return
                 else:
                     last_error = res_msg

@@ -49,7 +49,7 @@
 
 ## 运行方法
 
-    1.终端输入git clone https://github.com/yourname/NJFU-AutomaticLibrary.git将项目克隆到本地
+    1.终端输入git clone https://github.com/lnk137/NJFU-AutomaticLibrary.git将项目克隆到本地
     
     2.在项目中输入命令python main.py启动本地服务器
     

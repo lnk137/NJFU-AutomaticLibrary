@@ -13,12 +13,19 @@
     需注意自行补充.env，config.js中内容
     .env结构请参考.env.example文件
 
+当前默认分支 `mgdb` 使用 MongoDB。启动前需安装并启动 MongoDB，在
+`AL-BackEnd/.env` 中配置 `DB_IP=127.0.0.1:27017`（或实际数据库地址），
+并保留模板中的 `FOLDER_PATH=座位信息`。数据库名称固定为 `AutoLib`。
+`master`、`dev` 分支的旧版 SQLite 说明不适用于当前分支。
+
+在 `AL-BackEnd` 目录执行 `python -m pip install -r requirements.txt` 安装后端依赖。
+调度脚本使用 APScheduler 3.x 的接口，依赖清单已限制其主版本。
+
 ## 项目结构
 
 #### BackEnd
 
 	├─blueprints          // Flask 蓝图，用于实现 API 功能
-	├─db                  // 存放 SQLite 数据库文件
 	├─log                 // 日志目录
 	├─test                // 测试目录
 	├─utils               // 工具函数
@@ -51,12 +58,12 @@
 
     1.终端输入git clone https://github.com/lnk137/NJFU-AutomaticLibrary.git将项目克隆到本地
     
-    2.在项目中输入命令python main.py启动本地服务器
+    2.进入 AL-BackEnd 目录，安装上述依赖、将 .env.example 复制为 .env 并填写配置，确认 MongoDB 可连接后，输入 python main.py 启动后端（默认端口 5003）
     
     3.为scheduled_task.py配置定时启动任务
     
     4.(如果已经配置好前端)绑定学号后提交账号信息到数据库，之后保持本地服务器正常运行即可
-      (如果不想配置前端)手动填写sqlite数据库的reservation_info表，之后保持本地服务器正常运行即可
+      (如果不想配置前端)手动填写 MongoDB 的 AutoLib.user_config_info 集合，并确认 AutoLib.devices 集合已导入座位数据，之后配置定时任务执行 scheduled_task.py
 
 ## 联系方式                                               
 	邮箱:lnk137@foxmail.com

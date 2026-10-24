@@ -42,7 +42,6 @@ import requests
 from pymongo import MongoClient, DESCENDING
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from utils.pipeline import Pipeline
 from utils.vpn_system import VPNSystem
 from utils.library_system import LibrarySystem
 from utils import config

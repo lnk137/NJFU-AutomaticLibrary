@@ -6,6 +6,7 @@ import {createRequire} from 'node:module';
 import {pathToFileURL} from 'node:url';
 import * as drafts from '../../AL-FrontEnd/services/drafts.mjs';
 import * as helpers from '../../AL-FrontEnd/services/date_exceptions.mjs';
+import {transformViteAssets} from './sfc_test_helpers.mjs';
 
 const frontend=new URL('../../AL-FrontEnd/',import.meta.url),require=createRequire(new URL('package.json',frontend));
 const Vue=require('vue'),{renderToString}=require('@vue/server-renderer'),{parse,compileScript}=require('@vue/compiler-sfc');
@@ -13,16 +14,28 @@ const policy={open:'07:30',close:'22:00',friday_close:'20:00',min_minutes:120,ma
 const account={id:'a',revision:2,plan:{seat_ids:['1'],mode:'day',time_mode:'custom',day_offset:1,begin:'09:00',end:'12:00',trigger:'07:00:00',enabled:true},date_exceptions:{}};
 const seats=[{id:'1',name:'A001',location:'2F'},{id:'2',name:'A002',location:'2F'}];
 const deferred=()=>{let resolve;const promise=new Promise(a=>resolve=a);return {promise,resolve};};
-function editor(api={},changes={}){
+function editor(api={},changes={},clock=Date){
   const props=Vue.reactive({account:structuredClone(account),policy,seats,sessionKey:1,disabled:false,modelValue:null,...changes});
   const events=[],hooks={};let discard=true;
   const emit=(name,value)=>{events.push([name,value]);if(name==='update:modelValue')props.modelValue=value;if(name==='refreshed')props.account=value;};
   const source=readFileSync(new URL('components/DateExceptions.vue',frontend),'utf8').split('<script setup>')[1].split('</script>')[0].replace(/import\s[\s\S]*?;/g,'');
-  const context={...Vue,...drafts,...helpers,api,defineProps:()=>props,defineEmits:()=>emit,
+  const context={...Vue,...drafts,...helpers,Date:clock,api,defineProps:()=>props,defineEmits:()=>emit,
     onBeforeUnmount:f=>hooks.unmount=f,uni:{showModal:o=>o.success({confirm:discard})}};
   const scope=Vue.effectScope();scope.run(()=>vm.runInNewContext(source+'\nglobalThis.subject={openEditor,change,saveEditor,closeEditor,skipNext,restore,pickSeat,moveSeat,removeSeat,error,message,busy,addSegment,editSegment,selectSegment,removeSegment,staleDraft,validationError,reloadEditor};',context));
   return {p:context.subject,props,events,scope,hooks,setDiscard:value=>discard=value};
 }
+for(const action of ['override','skip_range'])test('reopening '+action+' after release uses the current next date without retiming an open draft',async()=>{
+  let now=Date.parse('2026-11-07T06:59:00+08:00');
+  class Clock extends Date{constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}}
+  const e=editor({}, {},Clock),key=action==='override'?'date':'start_date';
+  try{
+    e.p.openEditor(action);assert.equal(e.props.modelValue[key],'2026-11-08');
+    now=Date.parse('2026-11-07T07:01:00+08:00');await Vue.nextTick();
+    assert.equal(e.props.modelValue[key],'2026-11-08');
+    await e.p.closeEditor();e.p.openEditor(action);
+    assert.equal(e.props.modelValue[key],'2026-11-09');
+  }finally{e.scope.stop();}
+});
 test('saving one-day settings submits ordered seats and preserves the base plan',async()=>{
   let sent;const e=editor({updateDateExceptions:async(id,data)=>{sent={id,data};return {account:{...account,revision:3,date_exceptions:{'2099-01-01':{action:'skip'}}}};}});
   e.p.openEditor('override');e.p.change('date','2099-01-01');e.p.change('begin','14:00');e.p.change('end','18:00');e.p.pickSeat('2');e.p.moveSeat(1,-1);
@@ -68,7 +81,7 @@ test('consecutive skip dates render as one leave range without swallowing an ove
 });
 async function component(name,dependencies={}){
   const {descriptor}=parse(readFileSync(new URL('components/'+name+'.vue',frontend),'utf8'));
-  let code=compileScript(descriptor,{id:name,inlineTemplate:true,templateOptions:{compilerOptions:{isCustomElement:tag=>['view','text'].includes(tag)}}}).content;
+  let code=transformViteAssets(compileScript(descriptor,{id:name,inlineTemplate:true,templateOptions:{compilerOptions:{isCustomElement:tag=>['view','text'].includes(tag)}}}).content);
   code=code.replace(/from (['"])vue\1/g,`from '${pathToFileURL(require.resolve('vue')).href}'`)
     .replace(/(['"])@\/services\/([^'"]+)\1/g,(_,q,path)=>JSON.stringify(new URL('services/'+path,frontend).href));
   for(const [path,url] of Object.entries(dependencies))code=code.replaceAll(JSON.stringify(path),JSON.stringify(url)).replaceAll("'"+path+"'",JSON.stringify(url));

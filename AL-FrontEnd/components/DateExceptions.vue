@@ -51,7 +51,6 @@ const emit=defineEmits(['update:modelValue','saved','busy','preferences-saved','
 const busy=ref(false),error=ref(''),message=ref(''),conflict=ref(false);let sequence=0;
 const unavailable=computed(()=>busy.value||props.disabled||props.offline||!props.account?.plan);
 const rows=computed(()=>dateExceptionRows(props.account?.date_exceptions));
-const next=computed(()=>nextPlanWindow(props.account?.plan,props.policy,new Date(),props.account?.date_exceptions));
 const multiAllowed=computed(()=>props.account?.capabilities?.date_override_segments!==false);
 const editorSegments=computed(()=>props.modelValue?exceptionSegments(props.modelValue):[]);
 const selectedSegment=computed(()=>Math.min(props.modelValue?.seat_index||0,Math.max(0,editorSegments.value.length-1)));
@@ -65,7 +64,7 @@ function current(token){return token.id===props.account.id&&token.epoch===props.
 function clear(){const ownedBusy=busy.value;sequence++;busy.value=false;error.value='';message.value='';conflict.value=false;if(ownedBusy)emit('busy',false);}
 watch([()=>props.account?.id,()=>props.sessionKey],clear,{flush:'sync'});
 onBeforeUnmount(clear);
-function openEditor(action){if(unavailable.value)return;error.value='';message.value='';emit('update:modelValue',newDateEditor(action,props.account,props.policy,next.value));}
+function openEditor(action){if(unavailable.value)return;error.value='';message.value='';const next=nextPlanWindow(props.account?.plan,props.policy,new Date(),props.account?.date_exceptions);emit('update:modelValue',newDateEditor(action,props.account,props.policy,next));}
 function change(key,value,dirty=true){if(busy.value||!props.modelValue)return;if(['begin','end','seat_ids'].includes(key))return editSegment(selectedSegment.value,key,value);emit('update:modelValue',{...props.modelValue,[key]:value,dirty:props.modelValue.dirty||dirty});}
 function changeLibraryEditor(editor){if(busy.value||!props.modelValue)return;emit('update:modelValue',{...props.modelValue,libraryEditor:editor});}
 function preferencesSaved(result){if(result.account_id===props.account.id)emit('preferences-saved',result);}

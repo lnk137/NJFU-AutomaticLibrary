@@ -24,15 +24,23 @@ function keydown(event){
     const elements=[...surface.value.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),a[href],[tabindex="0"]')].filter(el=>el.getClientRects().length);
     const first=elements[0],last=elements[elements.length-1];if(!first){event.preventDefault();surface.value.focus();}
     else if(event.shiftKey&&(!surface.value.contains(document.activeElement)||document.activeElement===first)){event.preventDefault();last.focus();}
-    else if(!event.shiftKey&&(document.activeElement===last||document.activeElement===surface.value)){event.preventDefault();first.focus();}
+    else if(!event.shiftKey&&(!surface.value.contains(document.activeElement)||document.activeElement===last||document.activeElement===surface.value)){event.preventDefault();first.focus();}
   }
 }
-function detach(){if(typeof document==='undefined'||!listening)return;document.removeEventListener('keydown',keydown);const last=releaseScroll?.();releaseScroll=null;listening=false;if(last&&priorFocus?.isConnected)priorFocus.focus();}
+function detach(){
+  if(typeof document==='undefined'||!listening)return;
+  document.removeEventListener('keydown',keydown);releaseScroll?.();releaseScroll=null;listening=false;
+  const dialogs=[...document.querySelectorAll('[data-njfu-dialog]')];
+  if(dialogs.at(-1)!==surface.value)return;
+  const parent=dialogs.filter(dialog=>dialog!==surface.value).at(-1);
+  if(priorFocus?.isConnected&&(!parent||parent.contains(priorFocus)))priorFocus.focus();
+  else parent?.focus();
+}
 watch(()=>props.open,async opened=>{
   if(typeof document==='undefined')return;
   if(!opened){detach();return;}
   priorFocus=document.activeElement;releaseScroll=acquireScrollLock(document.body);document.addEventListener('keydown',keydown);listening=true;
-  await nextTick();surface.value?.focus();
+  await nextTick();if(props.open&&listening)surface.value?.focus();
 },{immediate:true});
 onBeforeUnmount(detach);
 </script>

@@ -242,6 +242,9 @@ class InboxEngine:
             return self._remember(request_id,digest,{'state':'applied','revision':revision,'message':'配置已在执行电脑落库生效'})
         except AppError as exc:
             if exc.code in AUTH_REJECTIONS and row: self.note_auth(row['_id'], exc.code)
+            if exc.code in ('dual_auth_window', 'dual_auth_window_unavailable'):
+                return {'state':'deferred','code':exc.code,
+                        'message':'双机认证保护尚未结束或未核实，配置稍后同步；现有计划继续运行'}
             retry = exc.code in ('network_error','school_http','account_busy','native_sync_pending','native_unavailable','native_recovery_busy') and job.get('attempt',1) < 4
             result = {'state':'deferred' if retry else 'failed','code':exc.code,'message':str(exc)}
             return result if retry else self._remember(request_id,digest,result)

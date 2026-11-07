@@ -181,7 +181,7 @@ class FormImportService:
             if old['revision']!=row['expected_revision']:raise AppError('conflict','账号或计划已更新，未覆盖；请重新导入',409)
             if old['_id'] in self.accounts.busy:raise AppError('account_busy','账号正在执行，请稍后处理')
             if not self.auth.is_allowed(row['student_id']):raise AppError('access_denied','此学号的使用权限已停用')
-            if row['action']=='scheduled':row['plan']=asdict(validate_plan(row['plan'],self.accounts.catalog))
+            if row['action']=='scheduled':row['plan']=asdict(self.accounts._validated_plan_update(old,row['plan']))
             self._quiet((row.get('plan') or {}).get('trigger','07:00:00'))
             if self.clock()>=expires_at:raise AppError('import_expired','整份审阅已过期，本行未执行')
             self._commit(key,row,old)

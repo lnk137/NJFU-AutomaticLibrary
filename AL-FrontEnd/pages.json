@@ -1,72 +1,51 @@
 {
-	"pages": [{
-			"path": "pages/index/index",
-			"style": {
-				"navigationBarTitleText": "",
-				"navigationStyle": "custom"
-			}
-		},
-		{
-			"path": "pages/test/test",
-			"style": {
-				"navigationBarTitleText": "",
-				"navigationStyle": "custom"
-			}
-		},
-		{
-			"path": "pages/account_info/account_info",
-			"style": {
-				"navigationBarTitleText": "",
-				"navigationStyle": "custom",
-				"enablePagePreload": true
-			}
-		},
-		{
-			"path": "pages/my/my",
-			"style": {
-				"navigationBarTitleText": "",
-				"navigationStyle": "custom"
-			}
-		},
-		{
-			"path": "pages/announcement/announcement",
-			"style": {
-				"navigationBarTitleText": "",
-				"navigationStyle": "custom"
-			}
-		},
-		{
-			"path": "pages/reservation_info/reservation_info",
-			"style": {
-				"navigationBarTitleText": "预约记录",
-				"navigationStyle": "custom"
-			}
-		}
-	],
-	"globalStyle": {
-		"navigationBarTextStyle": "black",
-		"navigationBarTitleText": "",
-		"navigationBarBackgroundColor": "#F8F8F8",
-		"backgroundColor": "#F8F8F8"
-	},
-	// "tabBar": {
-	// 	"color": "#333440",
-	// 	"fontSize": "17px",
-	// 	"selectedColor": "#23acde",
-	// 	"backgroundColor": "#C8E6C9",
-	// 	"borderStyle": "black",
-	// 	"position": "bottom",
-	// 	"list": [{
-	// 			"pagePath": "pages/index/index",
-	// 			"iconPath": "static/tabbar/home.png",
-	// 			"selectedIconPath": "static/tabbar/home_s.png"
-	// 		},
-	// 		{
-	// 			"pagePath": "pages/my/my",
-	// 			"iconPath": "static/tabbar/person.png",
-	// 			"selectedIconPath": "static/tabbar/person_s.png"
-	// 		}
-	// 	]
-	// },
-	"uniIdRouter": {}
+  "pages": [
+    {
+      "path": "pages/login/login",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "登录 · NJFU-AUTO-LIB"
+      }
+    },
+    {
+      "path": "pages/index/index",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "我的预约 · NJFU-AUTO-LIB"
+      }
+    },
+    {
+      "path": "pages/account_info/account_info",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "预约计划 · NJFU-AUTO-LIB"
+      }
+    },
+    {
+      "path": "pages/reservation_info/reservation_info",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "学校记录 · NJFU-AUTO-LIB"
+      }
+    },
+    {
+      "path": "pages/admin/admin",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "管理后台 · NJFU-AUTO-LIB"
+      }
+    },
+    {
+      "path": "pages/profile/profile",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "我的 · NJFU-AUTO-LIB"
+      }
+    }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarBackgroundColor": "#f3f6f1",
+    "backgroundColor": "#f3f6f1"
+  }
 }

@@ -1,0 +1,24 @@
+server {
+    listen 8443 ssl;
+    server_name njfuautolib.duckdns.org;
+    ssl_certificate /etc/letsencrypt/live/njfuautolib.duckdns.org/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/njfuautolib.duckdns.org/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    if ($host != "njfuautolib.duckdns.org") { return 444; }
+    client_max_body_size 64k;
+    client_body_buffer_size 64k;
+    access_log off;
+    error_log /var/log/nginx/njfu-relay-error.log warn;
+    error_page 502 503 504 =503 /offline.html;
+    location = /offline.html { internal; root /srv/njfu-relay; add_header Cache-Control no-store always; }
+    location /api/ {
+        include /etc/njfu-relay/proxy.inc;
+        error_page 502 503 504 =503 @offline_api;
+    }
+    location / { include /etc/njfu-relay/proxy.inc; }
+    location @offline_api {
+        default_type application/json;
+        add_header Cache-Control no-store always;
+        return 503 '{"error":"校园执行电脑暂未在线，当前无法登录或保存，请稍后重试","code":"worker_offline"}';
+    }
+}

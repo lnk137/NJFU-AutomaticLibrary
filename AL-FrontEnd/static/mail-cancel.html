@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>取消预约 · NJFU-AUTO-LIB</title>
+  <style>
+    :root{color-scheme:light;font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;color:#203d32;background:#f4f7f3}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px}main{width:min(100%,460px);padding:36px 28px;background:#fff;border:1px solid #dce6df;border-radius:18px}header{font-size:13px;font-weight:650;letter-spacing:.04em;color:#547063;margin-bottom:32px}h1{font-size:26px;line-height:1.4;margin:0 0 18px}p{line-height:1.8;margin:0;overflow-wrap:anywhere;color:#52655a}footer{margin-top:32px;font-size:13px;color:#718176}#result:before{content:"";display:block;width:30px;height:30px;margin-bottom:24px;border:3px solid #dce6df;border-top-color:#1b604c;border-radius:50%;animation:spin 1s linear infinite}#result[data-state="success"]:before{content:"✓";width:auto;height:auto;border:0;border-radius:0;color:#1b604c;font-size:32px;animation:none}#result[data-state="failed"]:before{content:"!";width:auto;height:auto;border:0;border-radius:0;color:#9a572c;font-size:32px;animation:none}@keyframes spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){#result:before{animation:none}}@media(max-width:420px){body{padding:16px}main{padding:30px 24px}}
+  </style>
+</head>
+<body>
+  <main><header>NJFU-AUTO-LIB</header><section id="result" data-state="pending" role="status" aria-live="polite"><h1 id="result-title">正在取消预约</h1><p id="result-message">正在核对邮件中的这条预约，请稍候。</p></section><footer>仅处理邮件中的本次预约，定时计划保持不变。</footer><noscript><p>当前浏览器未启用 JavaScript，没有执行取消。请在支持 JavaScript 的浏览器打开原邮件按钮。</p></noscript></main>
+  <script type="module" src="./mail-cancel.js"></script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+{
+  "name": "njfu-autolib-original-ui",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build:h5": "UNI_INPUT_DIR=. uni build"
+  },
+  "dependencies": {
+    "@dcloudio/uni-app": "3.0.0-5020620260917001",
+    "@dcloudio/uni-components": "3.0.0-5020620260917001",
+    "@dcloudio/uni-h5": "3.0.0-5020620260917001",
+    "pinia": "2.1.7",
+    "vue": "3.4.21",
+    "vue-i18n": "9.14.5"
+  },
+  "devDependencies": {
+    "@dcloudio/uni-cli-shared": "3.0.0-5020620260917001",
+    "@dcloudio/vite-plugin-uni": "3.0.0-5020620260917001",
+    "less": "4.2.2",
+    "sass": "1.77.8",
+    "vite": "5.2.8"
+  }
+}

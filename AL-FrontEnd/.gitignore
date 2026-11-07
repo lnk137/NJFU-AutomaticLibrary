@@ -1,5 +1,8 @@
-/config
+/config/*
+!/config/config.js
 /.hbuilderx
 /unpackage
 .idea
 .vscode
+node_modules/
+dist/

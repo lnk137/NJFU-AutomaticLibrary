@@ -1,0 +1,9 @@
+[Unit]
+Description=NJFU public relay certificate renewal
+After=network-online.target
+[Service]
+Type=oneshot
+Environment=HTTPS_PROXY=http://127.0.0.1:15004
+Environment=NJFU_CERT_PROXY=http://127.0.0.1:15004
+ExecStart=/usr/bin/certbot renew --cert-name njfuautolib.duckdns.org --quiet --deploy-hook "/usr/bin/python3 /etc/njfu-relay/reload_nginx.py"
+TimeoutStartSec=900

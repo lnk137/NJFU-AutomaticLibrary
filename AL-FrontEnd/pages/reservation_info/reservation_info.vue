@@ -1,421 +1,59 @@
 <template>
-	<view class="content">
-		<view class="header">预约记录</view>
-
-		<!-- 预约结果信息 -->
-		<view v-if="result" class="result-info">
-			<text class="result-text">{{result}}</text>
-		</view>
-
-		<!-- 查询按钮 -->
-		<button class="query-btn" @click="queryInfo" :disabled="loading">{{ loading ? '查询中...' : '查询记录' }}</button>
-
-		<!-- 错误信息 (针对预约记录列表查询的错误) -->
-		<view v-if="errorMessage" class="error-message">
-			<text>{{ errorMessage }}</text>
-		</view>
-
-		<!-- 预约列表 -->
-		<view class="reservation-list">
-			<view v-if="!loading && !errorMessage && (!reservations || reservations.length === 0)" class="empty-tip">
-				
-			</view>
-			<view v-else v-for="(reservation, index) in reservations" :key="index" class="reservation-item">
-				<view class="reservation-info">
-					<view class="info-row">
-						<text class="label">座位：</text>
-						<text class="value">{{reservation.devInfo.devName}}</text>
-					</view>
-					<view class="info-row">
-						<text class="label">房间：</text>
-						<text class="value">{{reservation.devInfo.roomName}}</text>
-					</view>
-					<view class="info-row">
-						<text class="label">时间：</text>
-						<text
-							class="value">{{formatTimeRange(reservation.resvBeginTime, reservation.resvEndTime)}}</text>
-					</view>
-					<view class="info-row">
-						<text class="label">状态：</text>
-						<text class="value"
-							:class="getStatusClass(reservation.resvStatus)">{{getStatusText(reservation.resvStatus)}}</text>
-					</view>
-				</view>
-				<button v-if="canDelete(reservation.resvStatus)" class="delete-btn"
-					@click="deleteReservation(reservation.uuid)">取消预约</button>
-			</view>
-		</view>
-	</view>
+<AppShell active="records"><view class="page-heading"><view class="title-row"><button class="icon-button" :aria-label="store.user?.role==='root'?'返回账号计划':'返回我的预约'" @click="back"><AppIcon name="chevron-left"/></button><h1>学校记录</h1></view><button class="button ghost" :disabled="busy||!store.activeAccount" @click="query"><AppIcon name="refresh-cw"/>{{busy?'查询中…':'刷新'}}</button></view>
+<view v-if="store.user?.role==='root'" class="account-context"><strong>管理账号 · {{store.activeAccount?.alias}}</strong><text>{{store.activeAccount?.student_id}}</text><details><summary>切换账号</summary><AccountSelector can-manage :accounts="store.accounts" :active="store.activeAccountId" @select="select"/></details></view>
+<view v-if="error||snapshot?.error" class="notice error" role="alert">{{error||'最近查询未成功'}} · 显示上次查询结果。</view>
+<view class="filter-bar"><label>日期<select class="filter" v-model="dateFilter" aria-label="记录使用日期"><option value="all">全部日期</option><option v-for="date in dates" :key="date" :value="date">{{date}}</option></select></label><label>状态<select class="filter" v-model="statusFilter" aria-label="学校记录状态"><option value="all">全部状态</option><option value="confirmed">学校已确认</option><option value="other">其他状态</option></select></label><text class="snapshot-stamp">最近成功查询 {{checkedTime}}</text></view>
+<view v-if="!snapshot?.checked_at" class="empty"><AppIcon name="file-text"/><h2>尚未查询学校记录</h2><p>查询今天至未来3天的学校实际记录。</p><button class="button secondary" style="margin-top:20px" :disabled="busy||!store.activeAccount" @click="query">查询学校记录</button></view>
+<view v-else-if="!filteredRecords.length" class="empty"><AppIcon name="file-text"/><h2>暂无匹配记录</h2><button class="text-button" @click="dateFilter='all';statusFilter='all'">清除筛选</button></view>
+<view v-else class="records-table"><view class="records-table-head"><text>座位</text><text>使用日期</text><text>时段</text><text>学校状态</text><text/></view><button class="school-record-row" v-for="r in filteredRecords" :key="r.id" @click="showDetail(r.id)"><strong>{{seatName(r.seat_id)}}</strong><text>{{r.begin.slice(0,10)}}</text><text>{{r.begin.slice(11,16)}}–{{r.end.slice(11,16)}}</text><text class="pill" :class="r.status===1027?'green':''">{{schoolRecordLabel(r.status)}}</text><AppIcon name="chevron-right"/></button></view>
+<p v-if="cancelMessage" class="notice success" role="status">{{cancelMessage}}</p><p v-if="linkMessage" class="notice" role="status">{{linkMessage}}</p><button v-if="requested?.intent==='cancel'" class="text-button" :disabled="busy" @click="retryMailTarget">重新核对邮件中的预约</button>
+<p class="footer">以学校最新记录为准。</p>
+<AppDialog :open="!!detailRecord&&!mailTarget" title="预约详情" :busy="busy" @close="detailId='' "><template v-if="detailRecord"><view class="record-detail-seat">{{seatName(detailRecord.seat_id)}}</view><text class="pill" :class="detailRecord.status===1027?'green':''">{{schoolRecordLabel(detailRecord.status)}}</text><dl class="record-detail-grid"><dt>使用日期</dt><dd>{{detailRecord.begin.slice(0,10)}}</dd><dt>使用时段</dt><dd>{{detailRecord.begin.slice(11,16)}}–{{detailRecord.end.slice(11,16)}}</dd><dt>所属学号</dt><dd>{{detailRecord.student_id}}</dd><dt>学校状态码</dt><dd>{{detailRecord.status}}</dd><dt>最近查询</dt><dd>{{checkedTime}}</dd></dl><p class="hint">状态来自学校查询。</p></template><template #footer><CancelReservation v-if="detailRecord&&store.activeAccount" :account-id="store.activeAccountId" :revision="store.activeAccount.revision" :record="detailRecord" :session-key="store.sessionEpoch" :seat-map="store.seatMap" :allow-live="!!store.status.allow_live" :disabled="busy||store.user?.auth_mode==='offline'" @cancelled="cancelled"/><button class="button secondary" :disabled="busy" @click="query">{{busy?'查询中…':'重新核对学校记录'}}</button></template></AppDialog>
+<CancelReservation v-if="mailTarget&&store.activeAccount" standalone auto-preview :account-id="store.activeAccountId" :revision="store.activeAccount.revision" :record="mailTarget" :session-key="store.sessionEpoch" :target-key="mailAttempt" :seat-map="store.seatMap" :allow-live="!!store.status.allow_live" :disabled="store.user?.auth_mode==='offline'" @cancelled="cancelled" @closed="linkMessage='已关闭取消确认，可重新核对邮件中的同一条预约。'"/>
+</AppShell>
 </template>
-
 <script setup>
-	import { ref } from 'vue';
-	import { onShow } from '@dcloudio/uni-app';
-	import { server_url } from '@/config/config.js';
+import {ref,computed,watch} from 'vue';
+import CancelReservation from '@/components/CancelReservation.vue';
+import {rememberReservationLink,clearReservationLink,reservationLinkTarget} from '@/services/reservation_link.mjs';import {onShow,onHide,onLoad} from '@dcloudio/uni-app';import {useWorkspace} from '@/stores/workspace.js';import AccountSelector from '@/components/AccountSelector.vue';import SessionBar from '@/components/SessionBar.vue';
+import AppShell from '@/components/AppShell.vue';import AppDialog from '@/components/AppDialog.vue';import AppIcon from '@/components/AppIcon.vue';import {schoolRecordLabel} from '@/services/navigation.mjs';
+const store=useWorkspace(),busy=ref(false),error=ref('');let generation=0;const requested=ref(null),mailReady=ref(false),mailAttempt=ref(0),cancelMessage=ref(''),linkMessage=ref('');
+const snapshot=computed(()=>store.snapshots[store.activeAccountId]);
+const mailTarget=computed(()=>mailReady.value&&requested.value?.intent==='cancel'&&store.activeAccountId===requested.value.accountId?(snapshot.value?.records?.find(r=>r.id===requested.value.recordId)||{id:requested.value.recordId}):null);
+const checkedTime=computed(()=>snapshot.value?.checked_at?snapshot.value.checked_at.replace('T',' ').slice(0,19):'尚未查询');
+const back=()=>uni.reLaunch({url:store.user?.role==='root'?'/pages/account_info/account_info?account_id='+encodeURIComponent(store.activeAccountId):'/pages/index/index'}),edit=()=>uni.navigateTo({url:'/pages/account_info/account_info'});
+function ownsTarget(){const target=requested.value;return !!target&&store.accounts.some(a=>a.id===target.accountId)&&(store.user?.role==='root'||store.user?.account_id===target.accountId);}
+function resolveLink(){
+  const target=requested.value;if(!target)return;
+  if(!ownsTarget()){mailReady.value=false;linkMessage.value='这条预约链接不属于当前账号，请使用对应账号登录。';return;}
+  if(store.activeAccountId!==target.accountId){mailReady.value=false;linkMessage.value='已切换账号，邮件中的预约目标已保留。';return;}
+  if(target.intent==='cancel'){detailId.value='';mailReady.value=true;linkMessage.value='';return;}
+  const found=snapshot.value?.records?.find(r=>r.id===target.recordId);
+  if(found){detailId.value=found.id;requested.value=null;clearReservationLink();}
+  else linkMessage.value='上次保存的记录中未找到这条预约，请刷新学校记录核对。';
+}
+function showDetail(id){mailReady.value=false;detailId.value=id;}
+function retryMailTarget(){if(busy.value)return;resolveLink();if(mailReady.value)mailAttempt.value++;}
+async function select(id){if(busy.value)return;generation++;mailReady.value=false;store.select(id);detailId.value='';error.value='';if(!id){edit();return;}const token=generation;try{await store.records();if(token===generation)resolveLink();}catch(e){if(token===generation)error.value=e.message;}}
+async function cancelled(result){const token=generation,accountId=store.activeAccountId;cancelMessage.value=result.message;detailId.value='';try{await store.records();}catch(e){if(token===generation&&accountId===store.activeAccountId)error.value=e.message;}}
+async function query(){if(busy.value)return;const gen=++generation;busy.value=true;error.value='';try{await store.records(true);if(gen===generation){resolveLink();if(mailReady.value)mailAttempt.value++;}}catch(e){if(gen===generation)error.value=e.message;}finally{if(gen===generation)busy.value=false;}}
+onLoad(q=>{generation++;mailReady.value=false;detailId.value='';requested.value=reservationLinkTarget(q.account_id,q.record_id,q.intent);if(requested.value)rememberReservationLink(requested.value.accountId,requested.value.recordId,undefined,requested.value.intent);});
+onShow(async()=>{const token=++generation;try{
+  await store.refresh();if(token!==generation)return;
+  if(requested.value&&!ownsTarget()){resolveLink();return;}
+  if(requested.value)store.select(requested.value.accountId);
+  if(store.activeAccountId)await store.records();if(token!==generation)return;
+  resolveLink();
+}catch(e){if(token===generation)error.value=e.message;}});
+onHide(()=>{generation++;mailReady.value=false;busy.value=false;store.invalidate();});
 
-	const reservations = ref([]);
-	const result = ref('');
-	const errorMessage = ref(null); // 用于存储预约记录列表查询的错误信息
-	const loading = ref(false); // 用于表示预约记录列表的加载状态
-
-	// 从本地存储获取用户信息，这里只需要获取一次
-	const userInfo = JSON.parse(uni.getStorageSync('userInfo') || '{}');
-
-	// 格式化时间范围
-	const formatTimeRange = (begin, end) => {
-		if (!begin || !end) return '';
-		const beginDate = new Date(begin);
-		const endDate = new Date(end);
-		
-		const formatDate = (date) => {
-			const month = String(date.getMonth() + 1).padStart(2, '0');
-			const day = String(date.getDate()).padStart(2, '0');
-			return `${month}-${day}`;
-		};
-		
-		const formatTime = (date) => {
-			const hours = String(date.getHours()).padStart(2, '0');
-			const minutes = String(date.getMinutes()).padStart(2, '0');
-			return `${hours}:${minutes}`;
-		};
-		
-		// 检查是否同一天
-		const isSameDay = beginDate.getDate() === endDate.getDate() &&
-			beginDate.getMonth() === endDate.getMonth() &&
-			beginDate.getFullYear() === endDate.getFullYear();
-		
-		if (isSameDay) {
-			return `${formatDate(beginDate)} ${formatTime(beginDate)} - ${formatTime(endDate)}`;
-		} else {
-			return `${formatDate(beginDate)} ${formatTime(beginDate)} - ${formatDate(endDate)} ${formatTime(endDate)}`;
-		}
-	};
-
-	// 获取状态文本和样式
-	const statusMap = {
-		1027: {
-			text: '未开始',
-			class: 'status-pending'
-		},
-		1029: {
-			text: '待签到',
-			class: 'status-reserve'
-		},
-		1093: {
-			text: '已签到',
-			class: 'status-check-in'
-		},
-		5313: {
-			text: '已结束',
-			class: 'status-ended'
-		},
-	};
-
-	const getStatusClass = (status) => statusMap[status]?.class || '';
-	const getStatusText = (status) => statusMap[status]?.text || status;
-	// canDelete 函数根据新的状态码逻辑调整
-	const canDelete = (status) => status === 1027;
-
-	// 查询预约记录列表的方法 (由按钮点击触发)
-	const queryInfo = async () => {
-		// 重置列表状态和错误信息
-		reservations.value = [];
-		errorMessage.value = null; // 清空列表查询错误信息
-		loading.value = true; // 设置加载状态
-
-		try {
-			// 检查用户信息，这是两个查询共享的逻辑
-			if (!userInfo || Object.keys(userInfo).length === 0) {
-				console.error('本地存储中没有用户信息，无法发送请求。');
-				errorMessage.value = '请先在配置页面填写账号信息';
-				return;
-			}
-
-			// 检查必要字段，这是两个查询共享的逻辑
-			if (!userInfo.pid || !userInfo.vpn_password || !userInfo.lib_password) {
-				console.error('本地存储用户信息不完整，缺少必要字段。');
-				errorMessage.value = '请先在配置页面填写完整的账号信息';
-				return;
-			}
-
-			const requestData = {
-				'pid': userInfo.pid,
-				'vpn_password': userInfo.vpn_password,
-				'lib_password': userInfo.lib_password
-			};
-			console.log('发送预约记录查询请求的数据:', requestData);
-
-			const response = await uni.request({
-				url: `${server_url}/db/reservation/query_info`,
-				method: 'POST',
-				data: requestData,
-				header: {
-					'Content-Type': 'application/json',
-				},
-			});
-
-			console.log('获取预约记录响应:', response);
-
-			// 检查响应状态码
-			if (response.statusCode !== 200) {
-				const errorDetail = response.data?.error || `状态码: ${response.statusCode}`;
-				throw new Error(`获取预约记录失败: ${errorDetail}`);
-			}
-
-			// 检查业务逻辑上的错误（如果后端在body里返回错误信息）
-			if (response.data && response.data.error) {
-                throw new Error(`获取预约记录失败: ${response.data.error}`);
-            }
-
-			// 成功获取预约记录
-			if (response.data && response.data.reservations) {
-				// 按照预约开始时间从小到大排序
-				const sortedReservations = response.data.reservations.sort((a, b) => {
-					return new Date(a.resvBeginTime) - new Date(b.resvBeginTime);
-				});
-				reservations.value = sortedReservations;
-			} else {
-                // 没有预约记录，这不是错误，只是列表为空
-                reservations.value = []; // 确保清空旧数据
-            }
-
-		} catch (e) {
-			console.error('查询预约记录列表失败:', e);
-			errorMessage.value = e.message || '获取预约记录失败，请稍后再试';
-			reservations.value = []; // 确保错误时清空列表
-		} finally {
-			loading.value = false; // 结束加载状态
-		}
-	};
-
-	// 获取预约结果信息 (页面显示时自动触发)
-	const fetchResult = async () => {
-		// fetchResult 仅更新 result.value，不处理错误，错误由 queryInfo 统一处理
-		// 移除 queryInfo 内部的调用，改由 onShow 触发
-		try {
-			// 检查 pid 是否存在，这是获取预约结果的最低要求
-			if (!userInfo || !userInfo.pid) {
-				result.value = '请先在配置页面填写学号以获取预约结果'; // 提示用户填写学号
-				return;
-			}
-
-			const response = await uni.request({
-				url: `${server_url}/db/reservation/result`,
-				method: 'POST',
-				data: {
-					'pid': userInfo.pid
-				},
-				header: {
-					'Content-Type': 'application/json',
-				},
-			});
-
-			console.log('获取预约结果响应:', response);
-
-			// 成功获取结果或没有结果，都更新 result.value
-			if (response.data && response.data.result) {
-				result.value = response.data.result;
-			} else {
-                 result.value = '暂无预约结果'; // 如果没有结果，显示默认提示
-            }
-		} catch (e) {
-			console.error('获取预约结果失败:', e);
-			// 获取结果失败时，显示错误信息或者默认提示
-			result.value = '获取预约结果失败，请稍后再试';
-		}
-	};
-
-	// 删除预约 (保持原样，删除成功后调用 queryInfo 刷新列表)
-	const deleteReservation = async (uuid) => {
-		try {
-			const res = await uni.showModal({
-				title: '确认取消',
-				content: '确定要取消这条预约记录吗？',
-				confirmText: '确定',
-				confirmColor: '#ff4d4f'
-			});
-
-			if (!res.confirm) return;
-
-			if (!userInfo || Object.keys(userInfo).length === 0) {
-				console.error('本地存储中没有用户信息，无法发送删除请求。');
-				uni.showToast({
-					title: '请先在配置页面填写账号信息',
-					icon: 'none',
-					duration: 3000
-				});
-				return;
-			}
-
-			if (!userInfo.pid || !userInfo.vpn_password || !userInfo.lib_password) {
-				console.error('本地存储用户信息不完整，缺少必要字段。');
-				uni.showToast({
-					title: '请先在配置页面填写完整的账号信息',
-					icon: 'none',
-					duration: 3000
-				});
-				return;
-			}
-
-			const requestData = {
-				'pid': userInfo.pid,
-				'vpn_password': userInfo.vpn_password,
-				'lib_password': userInfo.lib_password,
-				'uuid': uuid
-			};
-			console.log('发送删除预约请求的数据:', requestData);
-
-			const response = await uni.request({
-				url: `${server_url}/db/reservation/delete`,
-				method: 'POST',
-				data: requestData,
-				header: {
-					'Content-Type': 'application/json',
-				},
-			});
-
-			console.log('删除预约响应:', response);
-
-			if (response.data.success) {
-				uni.showToast({
-					title: '取消成功',
-					icon: 'success',
-					duration: 2000
-				});
-				await queryInfo();
-			} else {
-				throw new Error(response.data.message || '取消失败');
-			}
-		} catch (e) {
-			uni.showToast({
-				title: '取消失败，请重试',
-				icon: 'none',
-				duration: 2000
-			});
-			console.error('取消预约失败:', e);
-		}
-	};
-
-	// 页面显示时自动获取预约结果
-	onShow(() => {
-		fetchResult();
-	});
+const dateFilter=ref('all'),statusFilter=ref('all'),detailId=ref('');
+const dates=computed(()=>[...new Set((snapshot.value?.records||[]).map(r=>r.begin.slice(0,10)))].sort().reverse());
+const filteredRecords=computed(()=>(snapshot.value?.records||[]).filter(r=>(dateFilter.value==='all'||r.begin.startsWith(dateFilter.value))&&(statusFilter.value==='all'||statusFilter.value==='confirmed'&&r.status===1027||statusFilter.value==='other'&&r.status!==1027)));
+const detailRecord=computed(()=>(snapshot.value?.records||[]).find(r=>r.id===detailId.value));
+const seatName=id=>store.seatMap[id]?.name||id;
+watch(()=>[store.activeAccountId,store.sessionEpoch],()=>{detailId.value='';mailReady.value=false;dateFilter.value='all';statusFilter.value='all';},{flush:'sync'});
 </script>
-
-<style scoped lang="less">
-	.content {
-		background-color: #E8F5E9;
-		min-height: 100vh;
-		padding: 20px;
-	}
-
-	.header {
-		font-size: 32px;
-		font-weight: bold;
-		color: #535d52;
-		margin: 20px 0;
-		text-align: center;
-	}
-
-	.reservation-list {
-		width: 100%;
-		margin-top: 20px; /* 在按钮和结果/错误信息下方留白 */
-	}
-
-	.empty-tip {
-		text-align: center;
-		color: #666;
-		font-size: 16px;
-		margin-top: 40px;
-	}
-
-	.reservation-item {
-		background: #fff;
-		border-radius: 12px;
-		padding: 15px;
-		margin-bottom: 15px;
-		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-	}
-
-	.reservation-info {
-		.info-row {
-			display: flex;
-			margin-bottom: 8px;
-
-			.label {
-				color: #666;
-				width: 60px;
-			}
-
-			.value {
-				color: #333;
-				flex: 1;
-
-				&.status-pending {
-					color: #8c8c8c;  // 未开始 - 浅灰色
-				}
-
-				&.status-reserve {
-					color: #1890ff;  // 待签到 - 蓝色
-				}
-
-				&.status-check-in {
-					color: #52c41a;  // 已签到 - 绿色
-				}
-
-				&.status-ended {
-					color: #595959;  // 已结束 - 深灰色
-				}
-			}
-		}
-	}
-
-	.delete-btn {
-		background-color: #ff4d4f;
-		color: white;
-		border: none;
-		padding: 6px 12px;
-		border-radius: 6px;
-		font-size: 14px;
-		margin-top: 10px;
-		width: 100%;
-	}
-
-	.result-info {
-		background: #fff;
-		border-radius: 12px;
-		padding: 15px;
-		margin-bottom: 20px;
-		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-
-		.result-text {
-			color: #535d52;
-			font-size: 16px;
-			line-height: 1.5;
-			word-break: break-all;
-		}
-	}
-
-	.query-btn {
-		margin: 20px auto;
-		width: 80%;
-		background-color: #6b9cce;
-		color: white;
-		border-radius: 8px;
-		height: 40px;
-		line-height: 40px;
-		text-align: center;
-		font-size: 16px;
-	}
-
-	.error-message {
-		text-align: center;
-		color: #ff4d4f; /* 红色字体表示错误 */
-		font-size: 14px;
-		margin-top: 20px;
-		padding: 10px;
-		background-color: #fef0f0; /* 浅红色背景 */
-		border: 1px solid #f56c6c; /* 红色边框 */
-		border-radius: 8px;
-	}
+<style scoped>
+.filter-bar{gap:20px;margin-bottom:24px}.filter-bar label{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:10px}.snapshot-stamp{font-size:12px;color:var(--muted);margin-left:auto}.records-table-head,.school-record-row{display:grid;grid-template-columns:1.2fr 1fr 1.2fr 1.2fr 30px;gap:16px;align-items:center}.records-table-head{padding:14px 18px;border-bottom:1px solid var(--line);color:var(--muted);font-size:12px}.school-record-row{width:100%;text-align:left;padding:24px 18px;border-bottom:1px solid var(--line);font-size:14px;min-height:88px}.school-record-row:hover{background:var(--tint)}.record-detail-seat{font-size:32px;font-weight:650;margin-bottom:14px;overflow-wrap:anywhere}.record-detail-grid{display:grid;grid-template-columns:100px 1fr;gap:18px;font-size:14px;margin:30px 0}.record-detail-grid dt{color:var(--muted)}.record-detail-grid dd{margin:0;overflow-wrap:anywhere}.account-context details{width:100%}@media(max-width:599px){.page-heading .button{padding:10px 12px}.filter-bar{gap:12px}.filter-bar label{display:block;flex:1;min-width:0}.filter-bar select{display:block;width:100%;margin-top:8px;min-width:0}.snapshot-stamp{margin:0;width:100%}.records-table-head{display:none}.school-record-row{grid-template-columns:1fr auto;gap:7px 12px;padding:20px 0}.school-record-row strong{font-size:18px}.school-record-row>text:nth-child(2){font-size:12px;color:var(--muted)}.school-record-row>text:nth-child(3){grid-column:1;font-size:14px}.school-record-row .pill{grid-column:2;grid-row:2;justify-self:end}.school-record-row>.app-icon{display:none}}
 </style>

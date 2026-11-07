@@ -170,6 +170,15 @@ class NotificationService:
             self.outbox.update_one({'_id': key}, {'$setOnInsert': row}, upsert=True)
         except DuplicateKeyError:
             pass
+        if kind in ('reminder', 'dual_reminder'):
+            # Discovery has revalidated this receipt at the current preference
+            # time. Only an unattempted, untransferred copy may be rescheduled;
+            # a delivery claim or an email rebind must keep its original fence.
+            self.outbox.update_one({'_id': key, 'account_id': account_id, 'kind': kind,
+                'source': source, 'binding_id': binding_id, 'due_at': {'$ne': due},
+                'status': {'$in': ['pending', 'cancelled']},
+                'attempted_at': {'$exists': False}, 'reminder_alias_released_to': {'$exists': False}},
+                {'$set': {'due_at': due, 'expires_at': expires, 'status': 'pending'}})
         if handoff_from:
             current = self.outbox.find_one({'_id': key})
             if (current and current.get('status') == 'cancelled' and 'attempted_at' not in current

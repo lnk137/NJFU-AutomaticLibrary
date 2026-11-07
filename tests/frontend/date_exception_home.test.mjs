@@ -82,7 +82,7 @@ test('actual home template displays the effective next-seat order',async()=>{
   const effective=drafts.nextPlanWindow(plan,policy,new Date());
   const store={activeAccount:{id:'a',plan,date_exceptions:{[effective.date]:{action:'override',begin:'14:00',end:'18:00',seat_ids:['2','1']}}},
     activeAccountId:'a',user:{role:'student'},accounts:[],policy,seatMap:{1:{name:'Base seat'},2:{name:'One-day seat'}},
-    status:{allow_live:false},snapshots:{},counts:{total:0},runs:[],nextCursor:null,runRefreshError:'部分较早记录刷新失败，已保留上次结果'};
+    status:{allow_live:false},snapshots:{},counts:{total:0},runs:[],nextCursor:null,runRefreshError:'部分较早记录刷新失败，已保留上次结果',runCache:{cache_only:true,cache_limit:100,cached_total:7,cache_truncated:true,cached_at:1}};
   const encoded=code=>'data:text/javascript;base64,'+Buffer.from(code).toString('base64');
   const storeModule=encoded('export const useWorkspace=()=>('+JSON.stringify(store)+');');
   const layout=encoded(`import {h} from '${pathToFileURL(require.resolve('vue')).href}'; export default {props:{open:{default:undefined}},setup:(props,{slots})=>()=>props.open===false?null:h('div',slots.default?.())};`);
@@ -100,4 +100,5 @@ test('actual home template displays the effective next-seat order',async()=>{
   const backup=html.match(/<dt[^>]*>下次备选<\/dt><dd[^>]*>(.*?)<\/dd>/s)?.[1];
   assert.match(preferred||'',/One-day seat/);assert.match(backup||'',/Base seat/);
   assert.match(html,/<p[^>]*role="status"[^>]*>部分较早记录刷新失败，已保留上次结果<\/p>/);
+  assert.match(html,/已同步的 7 条记录/);assert.match(html,/上限 100 条/);assert.doesNotMatch(html,/最近 100 条/);
 });

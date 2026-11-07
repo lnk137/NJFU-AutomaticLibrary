@@ -88,6 +88,31 @@ test('late saved-plan responses cannot overwrite a newly selected session',async
   wait.resolve({account:{id:'old',student_id:'99000001',alias:'Old',revision:2,plan:p.plan.value}});await operation;
   assert.equal(p.store.refreshCalls,0);assert.equal(p.message.value,'');
 });
+for(const enabled of [false,true])test('confirmed '+(enabled?'pause':'enable')+' survives a failed follow-up refresh and advances the saved revision',async()=>{
+  const revisions=[],p=page({savePlan:async(id,plan,revision)=>{revisions.push(revision);return {account:{...p.store.activeAccount,revision:revision+1,plan:structuredClone(plan)}};}});
+  p.store.accounts[0].plan.enabled=enabled;p.load();
+  p.store.refresh=async()=>{throw new Error('refresh unavailable');};
+  await p.toggle();
+  assert.equal(p.plan.value.enabled,!enabled);
+  assert.equal(p.store.activeAccount.plan.enabled,!enabled);
+  assert.equal(p.readDraft().revision,2);
+  assert.equal(drafts.isDirty(p.readDraft()),false);
+  assert.match(p.message.value,/已保存/);assert.match(p.message.value,/刷新/);
+  assert.equal(await p.save(),true);assert.deepEqual(revisions,[1,2]);
+});
+test('an acknowledged offline save remains pending when the follow-up refresh fails',async()=>{
+  const p=page({savePlan:async()=>({pending:true,receipt:{state:'pending',version:1}})});
+  p.store.refresh=async()=>{throw new Error('refresh unavailable');};
+  await p.toggle();
+  assert.equal(p.plan.value.enabled,true);assert.equal(p.store.activeAccount.plan.enabled,false);
+  assert.equal(p.readDraft().revision,1);assert.equal(drafts.isDirty(p.readDraft()),false);
+  assert.match(p.message.value,/已保存到云端/);assert.match(p.message.value,/尚未生效/);assert.match(p.message.value,/刷新/);
+});
+test('a rejected plan write still restores the previous enable state',async()=>{
+  const p=page({savePlan:async()=>{throw new Error('write rejected');}});
+  await p.toggle();assert.equal(p.plan.value.enabled,false);assert.equal(p.readDraft().revision,1);
+  assert.equal(p.store.refreshCalls,0);assert.match(p.message.value,/write rejected/);
+});
 test('late school errors remain scoped to the initiating page/session',async()=>{
   const wait=deferred(),p=page({checkAccount:()=>wait.promise});const operation=p.check();leave(p);
   wait.reject(new Error('private old account failure'));await operation;assert.equal(p.message.value,'');

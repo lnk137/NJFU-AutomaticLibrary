@@ -126,9 +126,15 @@ async function check(){if(busy.value||!store.activeAccount)return;const token=re
 async function save(){
   if(busy.value||!store.activeAccount)return false;if(segmentAccessMessage.value&&isSegmentedPlan(plan.value)){fail(new Error(segmentAccessMessage.value+(managedAccount.value?'请先恢复普通计划草稿后保存':'')));return false;}const windowError=planWindowError({...plan.value,week_times:week.value},store.policy);if(windowError){fail(new Error(windowError));return false;}const token=requestContext(),sent=JSON.parse(JSON.stringify(readDraft()));busy.value=true;
   try{const weekTimes=Object.fromEntries(Object.entries(sent.week).filter(([,v])=>v[0]||v[1]));const r=await api.savePlan(token.accountId,{...sent.plan,week_times:weekTimes},sent.revision);if(!currentRequest(token))return false;
-    if(r.pending){await store.refresh();if(!currentRequest(token))return false;planBaseline=JSON.stringify([sent.plan,sent.week]);message.value='已保存到云端，待同步，尚未生效。';error.value=false;conflict.value=false;return true;}
-    const merged=applySavedPlan(readDraft(),r.account,sent);await store.refresh();if(!currentRequest(token))return false;useDraft(merged);segmentRecovery.value=null;
-    message.value='预约计划已保存。'+(store.status.allow_live?'':'真实预约执行仍未开启。');error.value=false;conflict.value=false;return true;
+    if(r.pending){planBaseline=JSON.stringify([sent.plan,sent.week]);message.value='已保存到云端，待同步，尚未生效。';}
+    else{
+      useDraft(applySavedPlan(readDraft(),r.account,sent));segmentRecovery.value=null;
+      store.accounts=store.accounts.map(account=>account.id===r.account.id&&account.revision<=r.account.revision?r.account:account);
+      message.value='预约计划已保存。'+(store.status.allow_live?'':'真实预约执行仍未开启。');
+    }
+    error.value=false;conflict.value=false;
+    try{await store.refresh();}catch(e){if(currentRequest(token)){message.value+='最新状态刷新失败：'+e.message+'，可稍后刷新核对。';error.value=true;}}
+    return true;
   }catch(e){if(currentRequest(token))fail(e);return false;}finally{if(samePage(token))busy.value=false;}
 }
 async function toggle(){if(busy.value)return;const token=requestContext(),old=plan.value.enabled;const confirmed=await new Promise(resolve=>uni.showModal({title:old?'暂停未来定时计划？':'保存并开启定时？',content:old?'学校已有预约和历史保留。':`${nextWindow.value.release_date||'—'} ${plan.value.trigger}放号；使用 ${nextWindow.value.date||'—'} ${nextWindow.value.segments?.map(s=>s.begin+'–'+s.end+' '+s.seat_ids.map(seatName).join(' → ')).join('；')||(nextWindow.value.begin||'—')+'–'+(nextWindow.value.end||'—')}；${(nextWindow.value.seat_ids||[]).map(seatName).join(' → ')}。学校回执决定是否成功。`,confirmText:old?'暂停计划':'保存并开启',success:r=>resolve(r.confirm)}));if(!confirmed||!currentRequest(token))return;plan.value.enabled=!old;if(!await save()&&currentRequest(token))plan.value.enabled=old;}

@@ -19,6 +19,52 @@ from .limits import PARALLEL_ACCOUNT_LIMIT
 from .inbox_transport import configure_session,read_route
 
 AUTH_REJECTIONS = frozenset({'login_failed', 'verification_required', 'login_incomplete', 'identity_mismatch'})
+SNAPSHOT_MAX_BYTES = 2 * 1024 * 1024 - 65536
+
+
+def _snapshot_size(value):
+    # Match requests' default JSON encoding, including escaped non-ASCII text.
+    return len(json.dumps(value, allow_nan=False).encode('utf-8'))
+
+
+def _bounded_snapshot(packet):
+    """Bound optional caches; never omit an account, authorization or saved plan."""
+    if _snapshot_size(packet) <= SNAPSHOT_MAX_BYTES: return packet
+    rows, histories = [], []
+    for source in packet['accounts']:
+        row = dict(source)
+        history = dict(source.get('runs') or {})
+        histories.append(history.get('items') or [])
+        row['runs'] = history | {'items': []}
+        rows.append(row)
+    result = packet | {'accounts': rows}
+    sizes = [_snapshot_size(row) for row in rows]
+    size = _snapshot_size(packet | {'accounts': []}) + sum(sizes) + 2 * max(0, len(rows)-1)
+    # A receipt cache is all-or-nothing: a truncated list must never look like
+    # a successful school query with missing reservations.
+    for index in sorted(range(len(rows)), key=lambda i: _snapshot_size(rows[i].get('records')), reverse=True):
+        if size <= SNAPSHOT_MAX_BYTES: break
+        old = rows[index].get('records') or {}
+        rows[index]['records'] = {**old, 'records': [], 'checked_at': None,
+                                  'error': 'cache_capacity', 'cache_truncated': True}
+        new_size = _snapshot_size(rows[index])
+        size += new_size-sizes[index]; sizes[index] = new_size
+    if size > SNAPSHOT_MAX_BYTES:
+        raise AppError('inbox_snapshot_capacity', '账号配置超出同步容量，请管理员核对；未发布部分账号快照', 503)
+    # Fairly retain a contiguous newest prefix for each account. Persisted
+    # counts continue to expose truncation through the existing cache contract.
+    blocked = set()
+    for rank in range(max((len(items) for items in histories), default=0)):
+        for index, items in enumerate(histories):
+            if index in blocked or rank >= len(items): continue
+            cached = rows[index]['runs']['items']
+            cost = _snapshot_size(items[rank]) + (2 if cached else 0)
+            if size+cost > SNAPSHOT_MAX_BYTES:
+                blocked.add(index); continue
+            cached.append(items[rank]); size += cost
+    if _snapshot_size(result) > SNAPSHOT_MAX_BYTES:
+        raise AppError('inbox_snapshot_capacity', '同步缓存超出容量，请管理员核对', 503)
+    return result
 
 
 class SyncWindow(Exception):
@@ -133,8 +179,8 @@ class InboxEngine:
                                                  return_document=ReturnDocument.AFTER)['value']
         safe_runtime = {k:runtime.get(k) for k in ('allow_live','scheduler_running','clock_ok','ready_to_submit',
                                                 'last_error','scheduler_warning','next_due','capacity','execution_message')}
-        return {'generation': sequence, 'accounts': rows, 'policy': school_policy(), 'runtime': safe_runtime,
-                'seats': [asdict(s) for s in self.accounts.catalog.values()]}
+        return _bounded_snapshot({'generation': sequence, 'accounts': rows, 'policy': school_policy(), 'runtime': safe_runtime,
+                                  'seats': [asdict(s) for s in self.accounts.catalog.values()]})
 
     def _remember(self, request_id, digest, result):
         self.receipts.update_one({'_id': request_id}, {'$setOnInsert': {'digest': digest, 'result': result,
@@ -317,6 +363,10 @@ class InboxWorker:
             except Exception as error:
                 self._record_failure('snapshot',error)
                 self.next_publish=time.time()+3
+                if getattr(error, 'inbox_http_status', None) == 413:
+                    # The server definitely rejected this body. Re-export fresh
+                    # state instead of permanently retrying an unsendable packet.
+                    self.snapshot_future=None;self.next_publish=time.time()+10
                 with self._lock:self._status['export_error']='账号快照发布待重试；现有计划继续运行'
                 # Keep the same generation for idempotent retry, while allowing
                 # independent polling within the existing cycle/quiet budget.

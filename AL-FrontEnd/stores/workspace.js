@@ -4,7 +4,7 @@ import {beginRequest,canApplyResponse,chooseAccount,canApplySnapshot,canApplyRun
 
 export const useWorkspace=defineStore('workspace',{
   state:()=>({user:null,sessionEpoch:0,logoutNotice:readLogoutMarker().notice,suppressAutoLogin:readLogoutMarker().blocked,accounts:[],activeAccountId:'',requestGeneration:0,recordSequences:{},drafts:{},snapshots:{},runs:[],counts:{},nextCursor:null,runCache:null,
-    seats:[],policy:null,status:{allow_live:false},error:'',ready:false,loading:false,runFilterKey:'',runSequence:0}),
+    seats:[],policy:null,status:{allow_live:false},error:'',ready:false,loading:false,runFilterKey:'',runSequence:0,runRefreshOffset:0,runRefreshError:''}),
   getters:{activeAccount:s=>s.accounts.find(a=>a.id===s.activeAccountId)||null,seatMap:s=>Object.fromEntries(s.seats.map(x=>[x.id,x]))},
   actions:{
     clearSession(){const epoch=this.sessionEpoch+1,generation=this.requestGeneration+1;this.$reset();this.sessionEpoch=epoch;this.requestGeneration=generation;},
@@ -25,15 +25,37 @@ export const useWorkspace=defineStore('workspace',{
       if(!this.ready){this.ready=true;if(this.accounts.length)this.select(this.accounts[0].id);}
       if(!this.seats.length){const seats=await api.getSeats();if(epoch===this.sessionEpoch)this.seats=seats.seats;}
     },
-    async loadRuns(filters={},append=false){
+    async loadRuns(filters={},append=false,preserve=false,detailId=''){
       const key=JSON.stringify([filters.account_id||'',filters.date||'']);
       if(append&&key!==this.runFilterKey)return;
-      const epoch=this.sessionEpoch;const sequence=++this.runSequence;this.runFilterKey=key;
+      preserve=preserve&&key===this.runFilterKey;
+      const previous=append||preserve?[...this.runs]:[],oldCursor=this.nextCursor;
+      if(key!==this.runFilterKey)this.runRefreshOffset=0;
+      const epoch=this.sessionEpoch,generation=this.requestGeneration,sequence=++this.runSequence;this.runFilterKey=key;
+      const current=()=>epoch===this.sessionEpoch&&generation===this.requestGeneration&&canApplyRunPage({key,sequence},this.runFilterKey,this.runSequence);
       const result=await api.listRuns(filters);
-      if(epoch!==this.sessionEpoch)return;
-      if(!canApplyRunPage({key,sequence},this.runFilterKey,this.runSequence))return;
-      const previous=append?this.runs:[],seen=new Set(previous.map(row=>row.id));
-      this.runs=[...previous,...result.items.filter(row=>!seen.has(row.id)&&seen.add(row.id))];this.counts=result.counts;this.nextCursor=result.next_cursor;
+      if(!current())return;
+      const fresh=new Map(result.items.map(row=>[row.id,row])),seen=new Set(previous.map(row=>row.id));
+      let refreshError='';
+      if(preserve){
+        const focused=previous.find(row=>row.id===detailId&&!fresh.has(row.id));
+        const active=previous.filter(row=>row.id!==focused?.id&&!fresh.has(row.id)&&['queued','preparing','submitting','uncertain'].includes(row.status));
+        const offset=active.length?this.runRefreshOffset%active.length:0,rotated=[...active.slice(offset),...active.slice(0,offset)];
+        const targets=[...(focused?[focused]:[]),...rotated].slice(0,4);
+        const updates=await Promise.allSettled(targets.map(async row=>{const response=await api.getRun(row.id);if(response.run?.id!==row.id||response.run.account_id!==row.account_id)throw new Error('记录响应不一致');return response.run;}));
+        if(!current())return;
+        this.runRefreshOffset=offset+targets.length-(focused?1:0);
+        for(const update of updates){if(update.status==='fulfilled')fresh.set(update.value.id,update.value);else refreshError=result.cache_only?'离线缓存未包含或未能刷新部分较早记录，保留上次结果；请实时登录后核对。':'部分较早记录刷新失败，已保留上次结果；稍后将继续刷新。';}
+      }
+      let rows;
+      if(append){
+        rows=[...previous];
+        for(let i=result.items.length-1;i>=0;i--){const row=result.items[i],at=rows.findIndex(item=>item.id===row.id);if(at>=0)rows[at]=row;else{const next=rows.findIndex(item=>item.id===result.items[i+1]?.id);rows.splice(next<0?rows.length:next,0,row);}}
+      }else rows=[...result.items,...previous.filter(row=>!result.items.some(item=>item.id===row.id))];
+      this.runs=rows.map(row=>fresh.get(row.id)||row);this.counts=result.counts;
+      const overlap=result.items.some(row=>seen.has(row.id));
+      this.nextCursor=preserve&&!result.cache_only&&overlap?oldCursor:result.next_cursor;
+      this.runRefreshError=refreshError;
       this.runCache=result.cache_only?{cache_only:true,cached_at:result.cached_at,cache_limit:result.cache_limit,cache_truncated:result.cache_truncated,cached_total:result.cached_total}:null;
     },
     async records(force=false){

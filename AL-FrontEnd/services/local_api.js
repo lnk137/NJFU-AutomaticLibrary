@@ -37,6 +37,7 @@ export const submitCancellation=(id,token)=>call(`/accounts/${encodeURIComponent
 export const getCancellation=(id,key)=>call(`/accounts/${encodeURIComponent(id)}/cancellations/${encodeURIComponent(key)}`);
 export const reconcileCancellation=(id,key)=>call(`/accounts/${encodeURIComponent(id)}/cancellations/${encodeURIComponent(key)}/reconcile`,'POST',{});
 export const listRuns=filters=>call('/runs?'+Object.entries(filters||{}).filter(([,v])=>v!==''&&v!=null).map(([k,v])=>encodeURIComponent(k)+'='+encodeURIComponent(v)).join('&'));
+export const getRun=id=>call(`/runs/${encodeURIComponent(id)}`);
 export const getStatus=()=>call('/status');
 export const getPolicy=()=>call('/policy');
 export const getSeats=()=>call('/seats');

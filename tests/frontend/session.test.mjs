@@ -41,13 +41,18 @@ test('late account and history responses cannot leak across a session switch',as
 });
 
 function apiClient(responses){
-  const events=[],paths=[];
+  const events=[],paths=[],methods=[];
   const source=readFileSync(new URL('../../AL-FrontEnd/services/local_api.js',import.meta.url),'utf8').replace(/export /g,'');
-  const context={uni:{$emit:event=>events.push(event),request:request=>{paths.push(request.url);request.success(responses.shift());}}};
-  vm.runInNewContext(source+'\nglobalThis.subject={getSession,login,verifyAccount};',context);
-  return {...context.subject,events,paths};
+  const context={uni:{$emit:event=>events.push(event),request:request=>{paths.push(request.url);methods.push(request.method);request.success(responses.shift());}}};
+  vm.runInNewContext(source+'\nglobalThis.subject={getSession,login,verifyAccount,getRun};',context);
+  return {...context.subject,events,paths,methods};
 }
 const boot={statusCode:200,data:{csrf:'fixture'}};
+test('a single execution history read is GET-only and encodes the requested identity',async()=>{
+  const client=apiClient([boot,{statusCode:200,data:{run:{id:'a/b?c',status:'success'}}}]);
+  assert.equal((await client.getRun('a/b?c')).run.status,'success');
+  assert.deepEqual(client.paths,['/api/local/bootstrap','/api/local/runs/a%2Fb%3Fc']);assert.deepEqual(client.methods,['GET','GET']);
+});
 
 test('expired local sessions trigger privacy reset but school password failures do not',async()=>{
   const expired=apiClient([boot,{statusCode:401,data:{code:'authentication_required'}}]);

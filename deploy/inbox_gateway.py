@@ -256,6 +256,12 @@ def create_gateway(config, store, upstream=None):
                 value.update(scheduler_running=False, ready_to_submit=False, execution_message='离线登录：配置等待执行端确认', inbox=store.summary(student), offline_mode=True)
                 return jsonify(value)
             if path == 'runs': return jsonify(store.cached_runs(student, request.args))
+            if path.startswith('runs/'):
+                key = path.split('/', 1)[1]
+                row = next((item for item in store.cached_runs(student, {})['items'] if item.get('id') == key), None)
+                if row is None: raise AppError('not_found', '任务不在当前离线缓存中', 404)
+                return jsonify(run={field: row.get(field) for field in ('id', 'account_id', 'target_date',
+                    'status', 'spec', 'message', 'updated_at', 'result', 'attempts', 'scheduler_timings')})
             if path == f'accounts/{account_id}/records': return jsonify(store.public_data(student, 'records'))
             if path.startswith('inbox/'): return jsonify(store.receipt(student, path.split('/', 1)[1]))
         if path == f'accounts/{account_id}/plan' and request.method == 'PUT':

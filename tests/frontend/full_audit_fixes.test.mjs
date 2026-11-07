@@ -50,8 +50,11 @@ test('online plan preview advances after release without changing any draft inpu
   const p=accountPage();await p.hooks.show();assert.equal(p.nextWindow.value.release_date,'2026-11-07');const before=clone(p.plan.value);
   p.advance('2026-11-07T07:00:01+08:00');assert.equal(p.nextWindow.value.release_date,'2026-11-08');assert.deepEqual(clone(p.plan.value),before);p.hooks.hide();
 });
-function home(){
-  const store=baseStore(),hooks={},calls=[],timers=[];store.loadRuns=async(filters,append=false)=>{calls.push(['runs',append]);store.runs=append?[...store.runs,{id:'older'}]:[{id:'newest'}];};store.records=async()=>{calls.push(['records']);store.snapshots.a={records:[{id:'fresh',status:1027,begin:'2099-01-01 09:00:00',end:'2099-01-01 12:00:00',seat_id:'s1'}],checked_at:'2026-11-07T09:00:00+08:00'};};
+function home(runApi=null){
+  const store=baseStore(),hooks={},calls=[],timers=[];
+  if(runApi){workspace(runApi,store);store.refresh=async()=>{};}
+  else store.loadRuns=async(filters,append=false,preserve=false)=>{calls.push(['runs',append]);store.runs=append?[...store.runs,{id:'older'}]:preserve?[{id:'newest'},...store.runs.filter(row=>row.id!=='newest')]:[{id:'newest'}];};
+  store.records=async()=>{calls.push(['records']);store.snapshots.a={records:[{id:'fresh',status:1027,begin:'2099-01-01 09:00:00',end:'2099-01-01 12:00:00',seat_id:'s1'}],checked_at:'2026-11-07T09:00:00+08:00'};};
   const context={...drafts,ref,computed,useWorkspace:()=>store,onShow:f=>hooks.show=f,onHide:f=>hooks.hide=f,onUnload:f=>hooks.unload=f,setInterval:f=>{timers.push(f);return 1;},clearInterval:()=>{},uni:{}};
   vm.runInNewContext(script('pages/index/index.vue')+'\nglobalThis.subject={refresh,loadMore,detailId,detail,confirmedRecord,calendarRef,recordsError:typeof recordsError===\'undefined\'?null:recordsError};',context);context.subject.calendarRef.value={async reload(){}};
   return {...context.subject,store,hooks,calls,poll:async()=>{for(const tick of timers)await tick();}};
@@ -66,10 +69,59 @@ test('automatic refresh keeps loaded history pages and an open historical detail
 test('receipt refresh failure preserves the previous card and reports its stale state',async()=>{
   const p=home();p.store.records=async()=>{throw new Error('snapshot offline');};await p.refresh();assert.ok(p.recordsError);assert.match(p.recordsError.value,/snapshot offline/);assert.equal(p.store.snapshots.a.checked_at,'2026-11-07T08:00:00+08:00');
 });
-function workspace(api){
+function workspace(api,existingStore=null){
   let options;const context={...workspaceHelpers,api,defineStore:(_,value)=>{options=value;},uni:{reLaunch(){}}};vm.runInNewContext(source('stores/workspace.js').replace(/^import .*\n/gm,'').replace('export const useWorkspace=','const useWorkspace='),context);
-  const store={...options.state()};store.$reset=()=>Object.assign(store,options.state());for(const [name,method] of Object.entries(options.actions))store[name]=method.bind(store);return store;
+  const store=existingStore||{...options.state()};if(existingStore)for(const [key,value] of Object.entries(options.state()))if(!(key in store))store[key]=value;
+  store.$reset=()=>Object.assign(store,options.state());for(const [name,method] of Object.entries(options.actions))store[name]=method.bind(store);return store;
 }
+for(const manual of [false,true])test((manual?'manual':'automatic')+' overview refresh updates an open detail and retains expanded history',async()=>{
+  let updated=false,reads=0;const p=home({
+    listRuns:async filters=>({items:filters.cursor?[{id:'older',status:'submitting'}]:[{id:'newest',status:'queued'}],counts:{total:2},next_cursor:filters.cursor?null:'page-2'}),
+    getRun:async id=>{reads++;return {run:{id,status:updated?'success':'submitting'}};}
+  });
+  await p.refresh();await p.loadMore();p.detailId.value='older';updated=true;await p.refresh(manual);
+  assert.equal(p.detail.value?.id,'older');assert.equal(p.detail.value.status,'success');assert.equal(reads,1);
+  assert.deepEqual(clone(p.store.runs.map(row=>row.id)),['newest','older']);
+});
+test('automatic overview refresh updates a detail already present on the first page',async()=>{
+  let updated=false;const p=home({listRuns:async()=>({items:[{id:'newest',status:updated?'success':'queued'}],counts:{total:1},next_cursor:null})});
+  await p.refresh();p.detailId.value='newest';updated=true;await p.refresh(false);assert.equal(p.detail.value.status,'success');
+});
+test('retained history refresh is bounded and rotates older active records with detail priority',async()=>{
+  const requests=[];let lists=0;const store=workspace({listRuns:async()=>{lists++;return {items:[{id:'newest'}],counts:{total:21},next_cursor:'first-next'};},getRun:async id=>{requests.push(id);return {run:{id,status:'submitting'}};}});
+  await store.loadRuns();store.runs.push(...Array.from({length:20},(_,i)=>({id:'old-'+i,status:i===19?'success':'submitting'})));store.nextCursor='older-next';
+  await store.loadRuns({},false,true,'old-19');assert.equal(lists,2);assert.equal(requests.length,4);assert.equal(requests[0],'old-19');assert.equal(store.nextCursor,'older-next');
+  const first=requests.slice(1);await store.loadRuns({},false,true,'old-19');assert.equal(requests.length,8);assert.equal(requests[4],'old-19');assert.equal(requests.slice(5).some(id=>first.includes(id)),false);
+});
+test('an offline cache miss retains the open historical row with a visible stale notice',async()=>{
+  const store=workspace({listRuns:async()=>({items:[{id:'newest'}],counts:{total:1},next_cursor:null,cache_only:true,cached_at:2,cache_limit:100}),getRun:async()=>{throw Object.assign(new Error('not cached'),{status:404});}});
+  await store.loadRuns();store.runs.push({id:'older',status:'uncertain'});store.nextCursor='expired-cache-cursor';
+  await store.loadRuns({},false,true,'older');assert.equal(store.runs.find(row=>row.id==='older').status,'uncertain');assert.match(store.runRefreshError,/缓存|刷新/);assert.equal(store.nextCursor,null);
+});
+test('a newly inserted full page uses its cursor to avoid skipping intermediate records',async()=>{
+  let changed=false;const store=workspace({listRuns:async filters=>!changed?{items:[{id:'old'}],counts:{total:1},next_cursor:'older-tail'}:filters.cursor?{items:[{id:'middle'},{id:'old'}],counts:{total:3},next_cursor:'older-tail'}:{items:[{id:'new'}],counts:{total:3},next_cursor:'new-gap'}});
+  await store.loadRuns();changed=true;await store.loadRuns({},false,true);assert.equal(store.nextCursor,'new-gap');
+  await store.loadRuns({},false,true);assert.equal(store.nextCursor,'new-gap');
+  assert.ok(store.runs.some(row=>row.id==='old'));
+  await store.loadRuns({cursor:store.nextCursor},true);assert.deepEqual(clone(store.runs.map(row=>row.id)),['new','middle','old']);assert.equal(store.nextCursor,'older-tail');
+});
+test('failed first-page refresh preserves the complete history and pagination position',async()=>{
+  let fail=false;const store=workspace({listRuns:async()=>{if(fail)throw new Error('offline');return {items:[{id:'old',status:'submitting'}],counts:{total:1},next_cursor:'tail'};}});
+  await store.loadRuns();fail=true;await assert.rejects(store.loadRuns({},false,true),/offline/);
+  assert.deepEqual(clone(store.runs),[{id:'old',status:'submitting'}]);assert.equal(store.nextCursor,'tail');
+});
+test('an account-mismatched single-run response cannot replace an existing detail',async()=>{
+  const store=workspace({listRuns:async()=>({items:[{id:'new'}],counts:{total:1},next_cursor:null}),getRun:async()=>({run:{id:'old',account_id:'foreign',status:'success'}})});
+  await store.loadRuns();store.runs.push({id:'old',account_id:'own',status:'uncertain'});await store.loadRuns({},false,true,'old');
+  assert.equal(store.runs.find(row=>row.id==='old').account_id,'own');assert.equal(store.runs.find(row=>row.id==='old').status,'uncertain');assert.match(store.runRefreshError,/刷新失败/);
+});
+for(const change of ['session','filter'])test('a delayed single-run refresh cannot overwrite a newer '+change,async()=>{
+  let release;const store=workspace({listRuns:async filters=>({items:[{id:filters.date||'newest'}],counts:{total:1},next_cursor:null}),getRun:()=>new Promise(resolve=>release=resolve)});
+  await store.loadRuns();store.runs.push({id:'old',status:'submitting'});const pending=store.loadRuns({},false,true,'old');await Promise.resolve();await Promise.resolve();
+  if(change==='session'){store.clearSession();store.runs=[{id:'private-new'}];}else await store.loadRuns({date:'new-filter'});
+  release?.({run:{id:'old',status:'success'}});await pending;
+  assert.deepEqual(clone(store.runs.map(row=>row.id)),[change==='session'?'private-new':'new-filter']);
+});
 test('failed logout clears private local state and blocks restoring the unrevoked session',async()=>{
   const store=workspace({logout:async()=>{throw new Error('network down');}});Object.assign(store,{user:{role:'student'},accounts:[{id:'private'}],drafts:{private:{password:''}},runs:[{id:'private'}]});await store.logout();
   assert.equal(store.user,null);assert.equal(store.accounts.length,0);assert.equal(Object.keys(store.drafts).length,0);assert.equal(store.suppressAutoLogin,true);assert.match(store.logoutNotice,/未确认|未能确认/);

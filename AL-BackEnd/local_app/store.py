@@ -140,6 +140,11 @@ class LocalStore:
         self.runs.update_many({'status': 'preparing','native_binding':{'$exists':False}}, {'$set': {'status': 'queued', 'message': '后台恢复，等待重新准备'}})
         return count
 
+    @staticmethod
+    def run_view(row):
+        return {key: row.get(key) for key in ('account_id', 'target_date', 'status', 'spec',
+            'message', 'updated_at', 'result', 'attempts', 'scheduler_timings')} | {'id': row['_id']}
+
     def list_runs(self, account_id, target_date, limit=100, cursor=None):
         if type(limit) is not int or not 1 <= limit <= 100: raise AppError('invalid_limit', '每页条数须为 1–100')
         query = {}
@@ -163,6 +168,5 @@ class LocalStore:
         if len(rows) > limit:
             last = rows[limit-1]
             next_cursor = base64.urlsafe_b64encode(json.dumps([last['created'], last['_id']]).encode()).decode()
-        items = [{k: row.get(k) for k in ('account_id', 'target_date', 'status', 'spec', 'message', 'updated_at', 'result', 'attempts', 'scheduler_timings')}
-                 | {'id': row['_id']} for row in rows[:limit]]
+        items = [self.run_view(row) for row in rows[:limit]]
         return RunPage(items, next_cursor, counts)

@@ -352,6 +352,12 @@ def create_app(settings, service, store, catalog, runtime_status, *, reconcile=N
             if account_id:own(account_id)
             account_id=g.user['account_id']
         return jsonify(asdict(store.list_runs(account_id,request.args.get('date') or None,limit,request.args.get('cursor') or None)))
+    @app.get('/api/local/runs/<path:run_key>')
+    def run_detail(run_key):
+        row=store.get_run(run_key)
+        if not row:raise AppError('not_found','任务不存在',404)
+        own(row['account_id'])
+        return jsonify(run=store.run_view(row))
     @app.post('/api/local/runs/<path:run_key>/reconcile')
     def reconcile_run(run_key):
         row=store.get_run(run_key)

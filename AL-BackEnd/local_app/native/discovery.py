@@ -6,6 +6,7 @@ import hashlib
 import threading
 import time
 import uuid
+from pymongo.errors import PyMongoError
 from local_app.models import AppError,RunSpec,ZONE,resolve_run,resolve_runs,validate_plan
 from local_app.date_exceptions import next_scheduled_run,validate_date_exceptions
 from .protocol import clock_ns
@@ -82,7 +83,19 @@ class NativeScheduler(LocalScheduler):
                                     continue
                             candidates[key]=run
                         finally:lock.release()
-                except Exception:errors.add(account.id)
+                except Exception as exc:
+                    errors.add(account.id)
+                    if isinstance(exc,PyMongoError):
+                        # A failed read is not evidence that an existing plan
+                        # was disabled. Keep both routes until discovery or the
+                        # final execution guard can validate them again.
+                        for route in (self,getattr(self,'fallback',None)):
+                            if route is None:continue
+                            with route._lock:
+                                for key,job in route.jobs.items():
+                                    run=job['run']
+                                    if run.account_id==account.id and run.revision==account.revision:
+                                        candidates[key]=run
             with self.operation_lock:
                 if self.maintenance.is_set() or self.stopping.is_set() or not self.reservations.allow_live:return
                 if tuple(signature)!=self._plan_signature:self.capacity_error=None;self._plan_signature=tuple(signature)

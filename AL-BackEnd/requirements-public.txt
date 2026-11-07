@@ -1,0 +1,2 @@
+# Existing local requirements remain unchanged.
+waitress==3.0.2

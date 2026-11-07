@@ -1,0 +1,8 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import * as accessibility from '../../AL-FrontEnd/services/button_accessibility.mjs';
+const handle=accessibility.handleButtonKey||(()=>{}),sync=accessibility.syncButton||(()=>{});
+function button(disabled=false){const attrs=new Map(disabled?[['disabled','true']]:[]);return {tagName:'UNI-BUTTON',attrs,clicks:0,hasAttribute:k=>attrs.has(k),getAttribute:k=>attrs.get(k),setAttribute:(k,v)=>attrs.set(k,v),click(){this.clicks++;},closest(){return this;}};}
+function event(target,key,type='keydown',repeat=false){return {target,key,type,repeat,defaultPrevented:false,preventDefault(){this.defaultPrevented=true;}};}
+test('Uni button gains semantic role, keyboard focus and disabled exclusion',()=>{const b=button();sync(b);assert.equal(b.attrs.get('role'),'button');assert.equal(b.attrs.get('tabindex'),'0');b.attrs.set('disabled','true');sync(b);assert.equal(b.attrs.get('aria-disabled'),'true');assert.equal(b.attrs.get('tabindex'),'-1');});
+test('keyboard activation is once per press and never activates a disabled action',()=>{const b=button();const down=event(b,'Enter');handle(down);assert.equal(b.clicks,1);assert.equal(down.defaultPrevented,true);handle(event(b,'Enter','keydown',true));handle(event(b,'Enter','keyup'));assert.equal(b.clicks,1);handle(event(b,' ','keydown'));assert.equal(b.clicks,1);handle(event(b,' ','keyup'));assert.equal(b.clicks,2);const blocked=button(true);handle(event(blocked,'Enter'));handle(event(blocked,' ','keyup'));assert.equal(blocked.clicks,0);});
+test('disabled updates on real inputs never replace their textbox semantics',()=>{const input=button();input.tagName='INPUT';sync(input);assert.equal(input.attrs.has('role'),false);});

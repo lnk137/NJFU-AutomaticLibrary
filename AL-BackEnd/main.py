@@ -1,25 +1,34 @@
-from flask import Flask
-from flask_cors import CORS
-from utils import config
-# from blueprints.reserve_bp import reserve_bp
-from blueprints.database_bp import database_bp
-from blueprints.app_bp import app_bp  # 导入新的蓝图
-from utils.insert_seat_ifo import *
-app = Flask(__name__)
+"""Explicit campus-local entry point; importing it starts no external activity."""
+import argparse
+from pathlib import Path
+import os
+import signal
 
-# 配置全局跨域
 
-CORS(app)
+def main():
+    parser = argparse.ArgumentParser(description='Campus-local app; real bookings are disabled by default.')
+    parser.add_argument('--enable-live-booking', action='store_true',
+                        help='Allow scheduled school submissions for individually enabled account plans')
+    parser.add_argument('--public-config',type=Path,help='Private HTTPS relay config; root remains local only')
+    args = parser.parse_args()
+    from local_app.config import load_settings, public_overrides
+    from local_app.runtime import create_runtime
+    root=Path(__file__).resolve().parents[1]
+    settings=load_settings(root,{'mongo_uri':os.environ.get('NJFU_MONGO_URI','mongodb://127.0.0.1:27019/'),
+                                 'allow_live':args.enable_live_booking} | (public_overrides(args.public_config) if args.public_config else {}))
+    runtime=create_runtime(settings)
+    def stop(signum,frame):raise KeyboardInterrupt
+    signal.signal(signal.SIGTERM,stop)
+    signal.signal(signal.SIGINT,stop)
+    try:
+        runtime.start()
+        if settings.public_origin:
+            from waitress import serve
+            serve(runtime.app,host='127.0.0.1',port=settings.port,threads=16,connection_limit=100,
+                  max_request_body_size=65536,channel_timeout=60,clear_untrusted_proxy_headers=True)
+        else:runtime.app.run(host='127.0.0.1',port=settings.port,threaded=True,debug=False,use_reloader=False)
+    except KeyboardInterrupt:pass
+    finally:runtime.close()
 
-# 注册蓝图
-# app.register_blueprint(reserve_bp, url_prefix="/reserve")
-app.register_blueprint(database_bp, url_prefix="/db")
-app.register_blueprint(app_bp, url_prefix="/app")  # 注册应用更新蓝图
 
-@app.route("/")
-def home():
-    return "Welcome to the Flask App with CORS!"
-
-if __name__ == "__main__":
-    # 指定端口为 5001
-    app.run(debug=True, host="0.0.0.0", port=5003)
+if __name__=='__main__':main()

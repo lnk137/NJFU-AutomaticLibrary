@@ -1,1 +1,10 @@
 /.idea
+.venv/
+.runtime/
+.local-data/
+/development/
+
+# Shared dependency links in isolated worktrees.
+/.venv
+/.runtime
+/AL-FrontEnd/node_modules

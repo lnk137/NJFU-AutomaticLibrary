@@ -1,0 +1,17 @@
+server {
+    listen 8443 ssl;
+    server_name njfuautolib.duckdns.org;
+    ssl_certificate /etc/letsencrypt/live/njfuautolib.duckdns.org/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/njfuautolib.duckdns.org/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    if ($host != "njfuautolib.duckdns.org") { return 444; }
+    client_max_body_size 64k;
+    client_body_buffer_size 64k;
+    access_log off;
+    error_log /var/log/nginx/njfu-relay-error.log warn;
+    location /_inbox/ {
+        client_max_body_size 2m;
+        include /etc/njfu-inbox/worker.inc;
+    }
+    location / { include /etc/njfu-inbox/proxy.inc; }
+}

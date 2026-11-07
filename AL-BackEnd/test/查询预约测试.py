@@ -11,11 +11,10 @@ python 查询预约测试.py
 """
 
 import logging
+import os
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List, Tuple
 
-from utils.library_system import LibrarySystem
-from utils import config
 
 # 配置日志
 logging.basicConfig(
@@ -68,6 +67,7 @@ def query_reservation(user_config: Dict[str, Any]) -> None:
             - vpn_password: VPN密码
             - lib_password: 图书馆密码
     """
+    from utils.library_system import LibrarySystem
     try:
         # 加载账号信息
         pid = user_config["pid"]
@@ -100,16 +100,20 @@ def query_reservation(user_config: Dict[str, Any]) -> None:
     except Exception as e:
         logger.error(f"程序运行出错: {str(e)}")
 
+def load_test_config():
+    """Require explicit credentials; no embedded account or prior receipt."""
+    required = {'pid': 'NJFU_LEGACY_STUDENT_ID', 'lib_password': 'NJFU_LEGACY_LIBRARY_PASSWORD',
+                'vpn_password': 'NJFU_LEGACY_VPN_PASSWORD'}
+    values = {field: os.environ.get(name) for field, name in required.items()}
+    if any(not value for value in values.values()):
+        raise RuntimeError("Required legacy test environment variables are missing")
+    return values
+
+
 def main():
     """主函数"""
     # 测试用户配置
-    test_user = {
-        "pid": "2210104120",
-        "is_reserved": "True",
-        "lib_password": "njfu160101!",
-        "vpn_password": "AAa040328/",
-        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    }
+    test_user = load_test_config()
     
     try:
         query_reservation(test_user)

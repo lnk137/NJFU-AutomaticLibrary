@@ -4,7 +4,7 @@ import {beginRequest,canApplyResponse,chooseAccount,canApplySnapshot,canApplyRun
 
 export const useWorkspace=defineStore('workspace',{
   state:()=>({user:null,sessionEpoch:0,logoutNotice:readLogoutMarker().notice,suppressAutoLogin:readLogoutMarker().blocked,accounts:[],activeAccountId:'',requestGeneration:0,recordSequences:{},drafts:{},snapshots:{},runs:[],counts:{},nextCursor:null,runCache:null,
-    seats:[],policy:null,status:{allow_live:false},error:'',ready:false,loading:false,runFilterKey:'',runSequence:0,runRefreshOffset:0,runRefreshError:''}),
+    seats:[],policy:null,status:{allow_live:false},error:'',ready:false,loading:false,runFilterKey:'',runAppliedKey:'',runCursorAfterId:'',runSequence:0,runRefreshOffset:0,runRefreshError:''}),
   getters:{activeAccount:s=>s.accounts.find(a=>a.id===s.activeAccountId)||null,seatMap:s=>Object.fromEntries(s.seats.map(x=>[x.id,x]))},
   actions:{
     clearSession(){const epoch=this.sessionEpoch+1,generation=this.requestGeneration+1;this.$reset();this.sessionEpoch=epoch;this.requestGeneration=generation;},
@@ -27,10 +27,10 @@ export const useWorkspace=defineStore('workspace',{
     },
     async loadRuns(filters={},append=false,preserve=false,detailId=''){
       const key=JSON.stringify([filters.account_id||'',filters.date||'']);
-      if(append&&key!==this.runFilterKey)return;
-      preserve=preserve&&key===this.runFilterKey;
-      const previous=append||preserve?[...this.runs]:[],oldCursor=this.nextCursor;
-      if(key!==this.runFilterKey)this.runRefreshOffset=0;
+      if(append&&key!==this.runAppliedKey)return;
+      preserve=preserve&&key===this.runAppliedKey;
+      const previous=append||preserve?[...this.runs]:[],oldCursor=this.nextCursor,oldCursorAfterId=this.runCursorAfterId;
+      if(key!==this.runAppliedKey)this.runRefreshOffset=0;
       const epoch=this.sessionEpoch,generation=this.requestGeneration,sequence=++this.runSequence;this.runFilterKey=key;
       const current=()=>epoch===this.sessionEpoch&&generation===this.requestGeneration&&canApplyRunPage({key,sequence},this.runFilterKey,this.runSequence);
       const result=await api.listRuns(filters);
@@ -49,12 +49,14 @@ export const useWorkspace=defineStore('workspace',{
       }
       let rows;
       if(append){
-        rows=[...previous];
-        for(let i=result.items.length-1;i>=0;i--){const row=result.items[i],at=rows.findIndex(item=>item.id===row.id);if(at>=0)rows[at]=row;else{const next=rows.findIndex(item=>item.id===result.items[i+1]?.id);rows.splice(next<0?rows.length:next,0,row);}}
+        const anchor=previous.findIndex(row=>row.id===oldCursorAfterId),at=anchor<0?previous.length:anchor+1;
+        rows=[...previous.slice(0,at).filter(row=>!fresh.has(row.id)),...result.items,...previous.slice(at).filter(row=>!fresh.has(row.id))];
       }else rows=[...result.items,...previous.filter(row=>!result.items.some(item=>item.id===row.id))];
-      this.runs=rows.map(row=>fresh.get(row.id)||row);this.counts=result.counts;
+      this.runs=rows.map(row=>fresh.get(row.id)||row);this.counts=result.counts;this.runAppliedKey=key;
       const overlap=result.items.some(row=>seen.has(row.id));
-      this.nextCursor=preserve&&!result.cache_only&&overlap?oldCursor:result.next_cursor;
+      const keepCursor=preserve&&!result.cache_only&&overlap;
+      this.nextCursor=keepCursor?oldCursor:result.next_cursor;
+      this.runCursorAfterId=keepCursor?oldCursorAfterId:result.items.at(-1)?.id||'';
       this.runRefreshError=refreshError;
       this.runCache=result.cache_only?{cache_only:true,cached_at:result.cached_at,cache_limit:result.cache_limit,cache_truncated:result.cache_truncated,cached_total:result.cached_total}:null;
     },

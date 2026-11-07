@@ -105,6 +105,13 @@ test('a newly inserted full page uses its cursor to avoid skipping intermediate 
   assert.ok(store.runs.some(row=>row.id==='old'));
   await store.loadRuns({cursor:store.nextCursor},true);assert.deepEqual(clone(store.runs.map(row=>row.id)),['new','middle','old']);assert.equal(store.nextCursor,'older-tail');
 });
+test('multiple gap pages stay before the old history even before they reach an overlapping row',async()=>{
+  let changed=false;const pages={gap1:{items:[{id:'new-4'},{id:'new-3'}],next_cursor:'gap2'},gap2:{items:[{id:'new-2'},{id:'new-1'}],next_cursor:'old-page'},'old-page':{items:[{id:'old-2'},{id:'old-1'}],next_cursor:null}};
+  const store=workspace({listRuns:async filters=>({counts:{total:8},...(!changed?pages['old-page']:filters.cursor?pages[filters.cursor]:{items:[{id:'new-6'},{id:'new-5'}],next_cursor:'gap1'})})});
+  await store.loadRuns();changed=true;await store.loadRuns({},false,true);
+  for(const page of ['gap1','gap2','old-page']){assert.equal(store.nextCursor,page);await store.loadRuns({cursor:page},true);await store.loadRuns({},false,true);}
+  assert.deepEqual(clone(store.runs.map(row=>row.id)),['new-6','new-5','new-4','new-3','new-2','new-1','old-2','old-1']);assert.equal(store.nextCursor,null);
+});
 test('failed first-page refresh preserves the complete history and pagination position',async()=>{
   let fail=false;const store=workspace({listRuns:async()=>{if(fail)throw new Error('offline');return {items:[{id:'old',status:'submitting'}],counts:{total:1},next_cursor:'tail'};}});
   await store.loadRuns();fail=true;await assert.rejects(store.loadRuns({},false,true),/offline/);
@@ -114,6 +121,23 @@ test('an account-mismatched single-run response cannot replace an existing detai
   const store=workspace({listRuns:async()=>({items:[{id:'new'}],counts:{total:1},next_cursor:null}),getRun:async()=>({run:{id:'old',account_id:'foreign',status:'success'}})});
   await store.loadRuns();store.runs.push({id:'old',account_id:'own',status:'uncertain'});await store.loadRuns({},false,true,'old');
   assert.equal(store.runs.find(row=>row.id==='old').account_id,'own');assert.equal(store.runs.find(row=>row.id==='old').status,'uncertain');assert.match(store.runRefreshError,/刷新失败/);
+});
+for(const field of ['date','account_id'])test('a failed '+field+' filter cannot mix the previous displayed rows into the recovered filter',async()=>{
+  let fail=true,details=0;const store=workspace({
+    listRuns:async filters=>{if(filters[field]==='B'&&fail)throw new Error('filter unavailable');return {items:[{id:filters[field],status:'queued'}],counts:{total:1},next_cursor:'tail-'+filters[field]};},
+    getRun:async id=>{details++;return {run:{id,status:'queued'}};}
+  });
+  await store.loadRuns({[field]:'A'});store.runs.push({id:'older-A',status:'uncertain'});
+  await assert.rejects(store.loadRuns({[field]:'B'}),/filter unavailable/);
+  assert.deepEqual(clone(store.runs.map(row=>row.id)),['A','older-A']);
+  fail=false;await store.loadRuns({[field]:'B'},false,true,'older-A');
+  assert.deepEqual(clone(store.runs.map(row=>row.id)),['B']);assert.equal(store.nextCursor,'tail-B');assert.equal(details,0);
+});
+test('loading more cannot apply the previous cursor to a filter whose first page failed',async()=>{
+  const calls=[];const store=workspace({listRuns:async filters=>{calls.push(clone(filters));if(filters.date==='B'&&!filters.cursor)throw new Error('filter unavailable');return {items:[{id:filters.date}],counts:{total:1},next_cursor:'tail-A'};}});
+  await store.loadRuns({date:'A'});await assert.rejects(store.loadRuns({date:'B'}),/filter unavailable/);
+  await store.loadRuns({date:'B',cursor:store.nextCursor},true);
+  assert.equal(calls.length,2);assert.deepEqual(clone(store.runs.map(row=>row.id)),['A']);
 });
 for(const change of ['session','filter'])test('a delayed single-run refresh cannot overwrite a newer '+change,async()=>{
   let release;const store=workspace({listRuns:async filters=>({items:[{id:filters.date||'newest'}],counts:{total:1},next_cursor:null}),getRun:()=>new Promise(resolve=>release=resolve)});

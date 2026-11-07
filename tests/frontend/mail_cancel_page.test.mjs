@@ -78,3 +78,27 @@ test('digest failure stops before any request and does not retain a raw ticket',
   const f=fixture([]);f.options.cryptoApi={subtle:{async digest(){throw new Error('unavailable');}}};
   await runMailCancellation(f.options);assert.equal(f.events[0],'clear-fragment');assert.equal(f.calls.length,0);assert.equal(f.values.size,0);
 });
+test('a lost submit response followed by an expired status capability stays unknown without retry',async()=>{
+  const denied={ok:false,status:403,json:async()=>({code:'mail_cancellation_invalid',error:'取消链接已失效'})};
+  const f=fixture([reply({csrf:'fixture-csrf'}),new Error('response lost'),denied]);
+  await runMailCancellation(f.options);
+  assert.equal(f.views.at(-1).state,'unknown');assert.doesNotMatch(f.views.at(-1).title,/未执行/);
+  assert.match(f.views.at(-1).message,/学校.*核对/);assert.equal(f.values.size,1);
+  assert.deepEqual(f.calls.map(c=>c.url.split('/').at(-1)),['bootstrap','submit','status']);
+});
+test('reopening a successful but now revoked ticket cannot reverse the outcome or submit again',async()=>{
+  const first=fixture([reply({csrf:'fixture-csrf'}),reply({state:'success',message:'已取消'})]);
+  await runMailCancellation(first.options);assert.equal(first.views.at(-1).state,'success');
+  const next=fixture([reply({csrf:'fixture-csrf'}),{ok:false,status:403,json:async()=>({code:'mail_cancellation_invalid'})}]);
+  next.options.storage=first.options.storage;await runMailCancellation(next.options);
+  assert.equal(next.views.at(-1).state,'unknown');assert.equal(next.calls[1].url.split('/').at(-1),'status');
+  assert.equal(first.values.size,1);assert.doesNotMatch(next.views.at(-1).title,/未执行/);
+});
+test('a previous attempt remains unknown when reopening cannot bootstrap',async()=>{
+  const first=fixture([reply({csrf:'fixture-csrf'}),reply({state:'success',message:'已取消'})]);
+  await runMailCancellation(first.options);
+  const next=fixture([new Error('offline')]);next.options.storage=first.options.storage;
+  await runMailCancellation(next.options);
+  assert.equal(next.views.at(-1).state,'unknown');assert.doesNotMatch(next.views.at(-1).message,/没有发送/);
+  assert.equal(first.values.size,1);assert.equal(next.calls.length,1);
+});

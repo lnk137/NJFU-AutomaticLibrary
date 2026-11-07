@@ -2,7 +2,8 @@
 export async function runMailCancellation({location=globalThis.location,history=globalThis.history,
   fetcher=globalThis.fetch,storage,cryptoApi,
   view=()=>{},sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms)),pollLimit=8}={}){
-  const show=(state,message)=>view({state,title:state==='success'?'预约已取消':state==='failed'?'未执行取消':'正在核对取消结果',message});
+  const show=(state,message)=>view({state,title:state==='success'?'预约已取消':state==='failed'?'未执行取消':state==='unknown'?'取消结果待核实':'正在核对取消结果',message});
+  const unknown=()=>({state:'unknown',message:'暂时无法核对先前取消请求的结果。请到学校预约页面核对；系统不会重复提交取消。'});
   const ticket=new URLSearchParams((location?.hash||'').slice(1)).get('ticket');
   try{history?.replaceState(null,'',(location?.pathname||'/static/mail-cancel.html')+(location?.search||''));}catch{}
   if(!ticket||ticket.length>8192||/[\s\x00-\x1f]/.test(ticket)){show('failed','取消链接无效或不完整，请检查原提醒邮件。');return;}
@@ -23,14 +24,17 @@ export async function runMailCancellation({location=globalThis.location,history=
     const data=await response.json();
     if(!response.ok||typeof data.csrf!=='string'||!data.csrf||data.csrf.length>256)throw new Error();
     csrf=data.csrf;
-  }catch{show('failed','暂时无法连接预约后台，没有发送取消请求。请稍后重新打开邮件按钮。');return;}
+  }catch{if(attempted){const result=unknown();show(result.state,result.message);}else show('failed','暂时无法连接预约后台，没有发送取消请求。请稍后重新打开邮件按钮。');return;}
   const request=async action=>{
     try{
       const response=await fetcher('/api/local/mail-cancellation/'+action,{method:'POST',credentials:'same-origin',cache:'no-store',referrerPolicy:'no-referrer',redirect:'error',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({ticket})});
       const data=await response.json();
       if(response.ok&&data&&typeof data.state==='string')return data;
-      if(data?.code==='mail_navigation_required'){forget();return {state:'failed',message:'这次打开仅作预览，没有取消预约。请直接点击邮件中的“取消预约”按钮。'};}
-      if(response.status>=400&&response.status<500&&response.status!==409)return {state:'failed',message:typeof data?.error==='string'?data.error:'取消链接已失效，请查看原预约记录。'};
+      if(action==='submit'&&data?.code==='mail_navigation_required'){forget();return {state:'failed',message:'这次打开仅作预览，没有取消预约。请直接点击邮件中的“取消预约”按钮。'};}
+      if(response.status>=400&&response.status<500&&response.status!==409){
+        if(action==='status')return unknown();
+        return {state:'failed',message:typeof data?.error==='string'?data.error:'取消链接已失效，请查看原预约记录。'};
+      }
     }catch{}
     return {state:'pending',message:'网络结果尚待核实，正在读取这条预约的取消状态；不会重复提交。'};
   };
@@ -39,7 +43,7 @@ export async function runMailCancellation({location=globalThis.location,history=
   let result=await request(action);
   for(let attempt=0;;attempt++){
     if(result.state==='not_started'){forget();show('failed',result.message||'后台尚未开始取消，请重新点击原邮件中的按钮。');return;}
-    if(result.state==='success'||result.state==='failed'){show(result.state,result.message||'请以学校预约记录为准。');return;}
+    if(result.state==='success'||result.state==='failed'||result.state==='unknown'){show(result.state,result.message||'请以学校预约记录为准。');return;}
     show('pending',result.message||'取消结果待核实，正在查询，请稍候。');
     if(attempt>=pollLimit){show('pending','取消结果仍待核实。请稍后重新打开原邮件按钮查看结果；系统不会重复取消。');return;}
     await sleep(2000);result=await request('status');

@@ -87,8 +87,22 @@ class CancellationService:
             return {'cancel_id': claims['cancel_id'], 'record': record, 'expires_at': claims['expires_at'], 'preview_token': self._encode(claims)}
         finally: lock.release()
 
+    def _can_reconcile(self, row):
+        if row.get('state') != 'uncertain' or row.get('ack') is not True: return False
+        try:
+            begin = datetime.strptime(row['record']['begin'], '%Y-%m-%d %H:%M:%S').replace(tzinfo=ZONE)
+            now = datetime.fromtimestamp(self._now(), ZONE)
+            return now.date() <= begin.date() <= now.date() + timedelta(days=3) and begin > now
+        except (KeyError, TypeError, ValueError, OverflowError):
+            return False
+
     def _view(self, row):
-        return {key: row.get(key) for key in ('account_id', 'state', 'record', 'message', 'requested_at', 'completed_at')} | {'cancel_id': row['_id']}
+        value = {key: row.get(key) for key in ('account_id', 'state', 'record', 'message', 'requested_at', 'completed_at')}
+        value.update(cancel_id=row['_id'], can_reconcile=self._can_reconcile(row))
+        if row.get('state') == 'uncertain' and not value['can_reconcile']:
+            value['message'] = ('未收到学校取消确认，不能自动核对取消结果，请到学校预约页面核对；系统不会重复取消'
+                if row.get('ack') is not True else '当前不能自动核对取消结果，请到学校预约页面核对；系统不会重复取消')
+        return value
 
     def _confirm_readback(self, doc, records):
         record = doc['record']
@@ -101,11 +115,7 @@ class CancellationService:
     def reconcile(self, account_id, cancel_id):
         doc = self.rows.find_one({'_id': cancel_id, 'account_id': account_id})
         if not doc: raise AppError('not_found', '取消记录不存在', 404)
-        if doc['state'] != 'uncertain' or not doc.get('ack'): return self._view(doc)
-        begin = datetime.strptime(doc['record']['begin'], '%Y-%m-%d %H:%M:%S').replace(tzinfo=ZONE)
-        now = datetime.fromtimestamp(self._now(), ZONE)
-        if not now.date() <= begin.date() <= now.date() + timedelta(days=3) or begin.timestamp() <= self._now():
-            return self._view(doc)
+        if not self._can_reconcile(doc): return self._view(doc)
         with self.accounts.account_lock(account_id):
             row = self.store.get_account(account_id)
             self._guard(account_id, row['revision'])

@@ -13,6 +13,7 @@ export function createCancellationController({api,context,state=newCancellationS
   }
   async function read(reconcile=false){
     const pending=state.pending,t=generation;if(!pending)return;
+    if(reconcile&&readAction()!=='reconcile')return false;
     const result=await perform(async c=>{
       try{return await (reconcile?api.reconcileCancellation:api.getCancellation)(c.accountId,pending.id);}
       catch(e){if(e.status===404)return {missing:true};throw e;}
@@ -20,6 +21,11 @@ export function createCancellationController({api,context,state=newCancellationS
     if(t!==generation||!result)return false;
     if(result.missing){if(clock()>=pending.expires_at){remember(null);state.preview=null;state.result=null;state.error='上次确认已过期且未提交，可重新核对预约';}else state.error='取消请求是否到达仍待核实，请稍后读取结果';return false;}
     state.result=result;return result;
+  }
+  function readAction(){
+    if(!state.pending)return null;
+    if(!state.result||state.result.state==='submitting')return 'read';
+    return state.result.state==='uncertain'&&state.result.can_reconcile===true?'reconcile':null;
   }
   async function prepare(){
     if(state.pending)return read();
@@ -55,7 +61,7 @@ export function createCancellationController({api,context,state=newCancellationS
       if(result&&same(c,t))state.result=result;
       return result;
     },
-    read,
+    read,readAction,
     dispose(){generation++;previewContext=null;state.busy=false;state.preview=null;state.open=false;}
   };
 }

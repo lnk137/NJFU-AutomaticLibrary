@@ -100,6 +100,33 @@ class CancellationTests(unittest.TestCase):
         self.assertEqual(self.service.reconcile(self.account.id, result['cancel_id'])['state'], 'success')
         self.assertEqual(len(self.school.cancels), 1)
 
+    def test_no_ack_explains_manual_readback_without_query_or_replay(self):
+        self.school.cancel_mode = 'timeout'
+        result = self.submit()
+        self.assertIs(result.get('can_reconcile'), False)
+        self.assertEqual(result['state'], 'uncertain')
+        self.assertRegex(result['message'], '不能自动|无法自动')
+        with patch.object(self.service, '_query', side_effect=AssertionError('No ACK cannot prove cancellation')):
+            latest = self.service.reconcile(self.account.id, result['cancel_id'])
+            self.assertEqual(latest['state'], 'uncertain')
+            self.assertIs(latest['can_reconcile'], False)
+        self.assertEqual(len(self.school.cancels), 1)
+        self.assertIs(self.service.rows.find_one({'_id': result['cancel_id']})['ack'], False)
+
+    def test_readback_capability_requires_ack_and_a_current_query_window(self):
+        self.school.cancel_mode = 'unverified'
+        result = self.submit()
+        self.assertIs(result.get('can_reconcile'), True)
+        self.now = datetime(2026, 11, 6, 9, 0, tzinfo=ZONE).timestamp()
+        with patch.object(self.service, '_query', side_effect=AssertionError('Started record is outside reconciliation window')):
+            latest = self.service.reconcile(self.account.id, result['cancel_id'])
+        self.assertIs(latest['can_reconcile'], False)
+        self.assertEqual(latest['state'], 'uncertain')
+        self.assertEqual(len(self.school.cancels), 1)
+
+    def test_terminal_result_does_not_advertise_school_reconciliation(self):
+        self.assertIs(self.submit().get('can_reconcile'), False)
+
     def test_unknown_status_after_ack_is_not_cancellation_proof(self):
         self.school.cancel_mode = 'unverified'
         result = self.submit()

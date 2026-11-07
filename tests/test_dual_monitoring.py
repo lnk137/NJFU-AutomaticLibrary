@@ -217,4 +217,3 @@ class MonitoringApiTests(CalendarMailApiTests):
         self.assertNotIn('never echo private text',str(alerts))
 
 if __name__=='__main__':unittest.main()
-

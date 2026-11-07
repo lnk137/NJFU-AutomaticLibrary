@@ -303,9 +303,14 @@ class InboxStore:
             db.execute('BEGIN IMMEDIATE')
             self._set(db, 'heartbeat', now)
             self._set(db, 'quiet_until', quiet_until if type(quiet_until) in (int,float) and 0 < quiet_until-now <= 90 else 0)
-            rows = db.execute("SELECT * FROM queue WHERE state='pending' OR (state='leased' AND lease_until<=?) ORDER BY created LIMIT 100", (now,)).fetchall()
+            rows = db.execute("SELECT * FROM queue WHERE (state='pending' OR (state='leased' AND lease_until<=?)) "
+                              "AND (retry_at<=? OR expires<=?) ORDER BY created LIMIT 100", (now, now, now)).fetchall()
             for row in rows:
                 current = self._row(db, row['student'])
+                if row['expires'] <= now and row['attempts'] == 0:
+                    db.execute("UPDATE queue SET state='failed',result=? WHERE id=?",
+                        (encoded({'code':'inbox_expired','message':'配置已过期，未在执行电脑落库；请重新载入后提交'}),row['id']))
+                    continue
                 if current and current.get('sync_error') and row['attempts']==0:
                     db.execute('UPDATE queue SET retry_at=?,result=? WHERE id=?',
                         (now+3,encoded({'code':'snapshot_error','message':'该账号快照暂不可用，等待恢复；其他账号继续同步'}),row['id']))
